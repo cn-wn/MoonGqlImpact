@@ -37,7 +37,22 @@ async fn demo() -> Unit {
   ).output()
   assert_eq(invalid.exit_code(), 2)
   assert_true(invalid.stdout().contains("client must define a named query"))
-  println("Apollo CLI demo passed (exit codes 0, 1, 2)")
+  let unused = ["names", "examples/apollo/mission-names.graphql"]
+  let global = @shell.Cmd("moon", [..prefix, old, next, ..unused]).output()
+  let observed = @shell.Cmd(
+    "moon",
+    [..prefix, "--observed-only", old, next, ..unused],
+  ).output()
+  assert_eq(global.exit_code(), 1)
+  observed.check()
+  assert_eq(@json.parse(global.stdout()), @json.parse(observed.stdout()))
+  let affected = @shell.Cmd(
+    "moon",
+    [..prefix, "--observed-only", old, next, ..files],
+  ).output()
+  assert_eq(affected.exit_code(), 1)
+  assert_eq(@json.parse(affected.stdout()), report)
+  println("Apollo CLI demo passed (strict and observed-only policies)")
 }
 
 ///|

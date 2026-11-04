@@ -1,0 +1,5 @@
+query MissionNames {
+  missions {
+    name
+  }
+}

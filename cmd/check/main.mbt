@@ -13,16 +13,19 @@ fn read_source(path : String) -> @impact.Source raise {
 
 ///|
 fn run(args : Array[String]) -> Int32 raise {
-  if args.length() < 5 || args.length() % 2 == 0 {
+  let observed_only = args.get(1) == Some("--observed-only")
+  let first = if observed_only { 2 } else { 1 }
+  let input_count = args.length() - first
+  if input_count < 4 || input_count % 2 != 0 {
     println(
-      "Usage: check OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
+      "Usage: check [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
     )
     return 2
   }
-  let baseline = read_source(args[1])
-  let proposed = read_source(args[2])
+  let baseline = read_source(args[first])
+  let proposed = read_source(args[first + 1])
   let groups : Map[String, Array[@impact.Source]] = Map([])
-  for i = 3; i < args.length(); i = i + 2 {
+  for i = first + 2; i < args.length(); i = i + 2 {
     let file = read_source(args[i + 1])
     match groups.get(args[i]) {
       Some(files) => files.push(file)
@@ -35,7 +38,12 @@ fn run(args : Array[String]) -> Int32 raise {
   }
   let report = @impact.analyze_upgrade(baseline, proposed, clients)
   println(report.to_json().stringify())
-  if report.changes.is_empty() {
+  let blocks = if observed_only {
+    report.changes.any(fn(change) { !change.impacts.is_empty() })
+  } else {
+    !report.changes.is_empty()
+  }
+  if !blocks {
     0
   } else {
     1
