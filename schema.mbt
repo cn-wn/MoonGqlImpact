@@ -81,6 +81,25 @@ fn validate_field_directives(
 }
 
 ///|
+fn index_fields(
+  source : Source,
+  fields : Map[String, IndexedField],
+  definitions : Array[@gql.SchemaField],
+) -> Unit raise AnalysisError {
+  for field in definitions {
+    let at = source.at(field.position)
+    if fields.contains(field.name) || field.name.has_prefix("__") {
+      raise Invalid(at, "duplicate or reserved field: \{field.name}")
+    }
+    if !field.arguments.is_empty() {
+      raise Unsupported(at, "schema arguments are outside the output profile")
+    }
+    validate_field_directives(source, field.directives)
+    fields[field.name] = { kind: field.field_type, at, }
+  }
+}
+
+///|
 fn index(source : Source) -> Schema raise AnalysisError {
   let start = { path: source.path, line: 1, column: 1, }
   source.check_size()
@@ -89,6 +108,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   }
   let objects = Map([])
   let scalars = Set([])
+  let extensions = []
   let mut root = None
   for definition in doc.definitions {
     match definition {
@@ -136,29 +156,35 @@ fn index(source : Source) -> Schema raise AnalysisError {
           )
         }
         let fields = Map([])
-        for field in object.fields {
-          let at = source.at(field.position)
-          if fields.contains(field.name) || field.name.has_prefix("__") {
-            raise Invalid(at, "duplicate or reserved field: \{field.name}")
-          }
-          if !field.arguments.is_empty() {
-            raise Unsupported(
-              at, "schema arguments are outside the output profile",
-            )
-          }
-          validate_field_directives(source, field.directives)
-          fields[field.name] = { kind: field.field_type, at, }
-        }
+        index_fields(source, fields, object.fields)
         if fields.is_empty() {
           raise Invalid(at, "object must define at least one field")
         }
         objects[object.name] = fields
       }
+      TypeExt(ObjectTypeExt(extension)) => extensions.push(extension)
       _ =>
         raise Unsupported(
-          start, "only object definitions, scalar definitions and a query root are supported",
+          start, "only object definitions, object field extensions, scalar definitions and a query root are supported",
         )
     }
+  }
+  for extension in extensions {
+    let at = source.at(extension.position)
+    if !extension.implements_interfaces.is_empty() ||
+      !extension.directives.is_empty() {
+      raise Unsupported(at, "object extensions may only add fields")
+    }
+    guard objects.get(extension.name) is Some(fields) else {
+      raise Invalid(
+        at,
+        "extension requires an existing object: \{extension.name}",
+      )
+    }
+    if extension.fields.is_empty() {
+      raise Invalid(at, "object extension must add at least one field")
+    }
+    index_fields(source, fields, extension.fields)
   }
   if root is None &&
     (objects.contains("Mutation") || objects.contains("Subscription")) {

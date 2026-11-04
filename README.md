@@ -29,11 +29,11 @@ Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values a
 
 Query-only SDL with object types, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Scalar directives are rejected. Executable documents support named queries, aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
 
-An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
+Use `extend type` to add fields to an existing object within the same SDL snapshot. Extended fields retain their declaration locations. An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
 
 Selections may use `@include(if: true)` or `@skip(if: false)` with either literal boolean. The report retains dependencies in every branch because GraphQL validates fields before evaluating execution directives.
 
-The checker rejects parameters and variables, other directives, interfaces and unions, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and schema extensions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects parameters and variables, other directives, interfaces and unions, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and roadmap
 

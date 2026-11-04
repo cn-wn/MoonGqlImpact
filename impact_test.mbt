@@ -306,3 +306,32 @@ test "opaque custom scalar leaves detect object-to-scalar transitions" {
   }
   assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
 }
+
+///|
+test "object extensions resolve forward declarations and retain field locations" {
+  let old = source(
+    "old", "extend type Query { legacy: String! }\ntype Query { keep: String }",
+  )
+  let next = source("next", "type Query { keep: String }")
+  let clients = [
+    @moongqlimpact.Client::{
+      name: "web",
+      sources: [source("query", "query Read { legacy }")],
+    },
+  ]
+  let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+  assert_eq(report.changes[0].coordinate, "Query.legacy")
+  assert_eq(report.changes[0].baseline.line, 1)
+  assert_eq(report.changes[0].impacts[0].operation, "Read")
+  for
+    text in [
+      "type Query { keep: String } extend type Missing { extra: String }", "type Query { keep: String } extend type Query { keep: String }",
+    ] {
+    let rejected = Ok(
+      @moongqlimpact.analyze_upgrade(old, source("bad", text), clients),
+    ) catch {
+      error => Err(error)
+    }
+    assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+  }
+}
