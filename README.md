@@ -29,7 +29,9 @@ Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values a
 
 Query-only SDL with object types, a default or explicit query root, built-in scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Executable documents support named queries, aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
 
-The checker rejects parameters and variables, directives, interfaces and unions, custom scalars, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and schema extensions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
+
+The checker rejects parameters and variables, other directives, interfaces and unions, custom scalars, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and schema extensions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and roadmap
 

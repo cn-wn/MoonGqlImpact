@@ -53,6 +53,34 @@ fn builtin(name : String) -> Bool {
 }
 
 ///|
+fn validate_field_directives(
+  source : Source,
+  directives : Array[@gql.Directive],
+) -> Unit raise AnalysisError {
+  let mut deprecated = false
+  for directive in directives {
+    let at = source.at(directive.position)
+    if directive.name != "deprecated" {
+      raise Unsupported(
+        at,
+        "unsupported schema field directive @\{directive.name}",
+      )
+    }
+    if deprecated {
+      raise Invalid(at, "duplicate @deprecated directive")
+    }
+    match directive.arguments {
+      [] | [("reason", StringValue(_) | NullValue)] => ()
+      _ =>
+        raise Invalid(
+          at, "@deprecated accepts only an optional string or null reason",
+        )
+    }
+    deprecated = true
+  }
+}
+
+///|
 fn index(source : Source) -> Schema raise AnalysisError {
   let start = { path: source.path, line: 1, column: 1, }
   source.check_size()
@@ -97,11 +125,12 @@ fn index(source : Source) -> Schema raise AnalysisError {
           if fields.contains(field.name) || field.name.has_prefix("__") {
             raise Invalid(at, "duplicate or reserved field: \{field.name}")
           }
-          if !field.arguments.is_empty() || !field.directives.is_empty() {
+          if !field.arguments.is_empty() {
             raise Unsupported(
-              at, "schema arguments and directives are outside the output profile",
+              at, "schema arguments are outside the output profile",
             )
           }
+          validate_field_directives(source, field.directives)
           fields[field.name] = { kind: field.field_type, at, }
         }
         if fields.is_empty() {

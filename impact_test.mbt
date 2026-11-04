@@ -206,3 +206,41 @@ test "__typename can be aliased but cannot shadow another field at the same resp
     assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
   }
 }
+
+///|
+test "deprecated fields remain selectable until removed" {
+  let old = source(
+    "old", "type Query { legacy: String! @deprecated(reason: \"Use name\") name: String }",
+  )
+  let marked = source(
+    "marked", "type Query { legacy: String! @deprecated name: String }",
+  )
+  let next = source("next", "type Query { name: String }")
+  let clients = [
+    @moongqlimpact.Client::{
+      name: "web",
+      sources: [source("client", "query Read { legacy }")],
+    },
+  ]
+  assert_true(
+    @moongqlimpact.analyze_upgrade(old, marked, clients).changes.is_empty(),
+  )
+  let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+  assert_eq(report.changes[0].coordinate, "Query.legacy")
+  assert_eq(report.changes[0].impacts[0].operation, "Read")
+  for directive in ["@deprecated(reason: 123)", "@deprecated @deprecated"] {
+    let invalid = source(
+      "invalid",
+      "type Query { legacy: String! " + directive + " }",
+    )
+    let rejected = Ok(@moongqlimpact.analyze_upgrade(old, invalid, clients)) catch {
+      error => Err(error)
+    }
+    assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+  }
+  let custom = source("custom", "type Query { legacy: String! @custom }")
+  let rejected = Ok(@moongqlimpact.analyze_upgrade(old, custom, clients)) catch {
+    error => Err(error)
+  }
+  assert_true(rejected is Err(@moongqlimpact.Unsupported(_, _)))
+}
