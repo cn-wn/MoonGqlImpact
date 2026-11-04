@@ -88,6 +88,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
     GraphQLParseError(message, pos) => raise Invalid(source.at(pos), message)
   }
   let objects = Map([])
+  let scalars = Set([])
   let mut root = None
   for definition in doc.definitions {
     match definition {
@@ -106,9 +107,24 @@ fn index(source : Source) -> Schema raise AnalysisError {
         }
         root = Some(name)
       }
+      TypeDef(ScalarTypeDef(scalar)) => {
+        let at = source.at(scalar.position)
+        if !scalar.directives.is_empty() {
+          raise Unsupported(
+            at, "scalar directives are outside the output profile",
+          )
+        }
+        if builtin(scalar.name) ||
+          scalar.name.has_prefix("__") ||
+          objects.contains(scalar.name) ||
+          !scalars.add_and_check(scalar.name) {
+          raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
+        }
+      }
       TypeDef(ObjectTypeDef(object)) => {
         let at = source.at(object.position)
         if objects.contains(object.name) ||
+          scalars.contains(object.name) ||
           builtin(object.name) ||
           object.name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved object: \{object.name}")
@@ -140,7 +156,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       }
       _ =>
         raise Unsupported(
-          start, "only object definitions, built-in scalars and a query root are supported",
+          start, "only object definitions, scalar definitions and a query root are supported",
         )
     }
   }
@@ -157,7 +173,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   for _, fields in objects {
     for _, field in fields {
       let name = named(field.kind)
-      if !builtin(name) && !objects.contains(name) {
+      if !builtin(name) && !objects.contains(name) && !scalars.contains(name) {
         raise Invalid(field.at, "undefined output type: \{name}")
       }
     }

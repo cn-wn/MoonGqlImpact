@@ -269,7 +269,10 @@ pub fn analyze_upgrade(
         Some(fields) => fields.get(name)
         None => None
       }
-      if candidate is Some(new_field) && preserves(field.kind, new_field.kind) {
+      let base_name = named(field.kind)
+      if candidate is Some(new_field) &&
+        preserves(field.kind, new_field.kind) &&
+        old.objects.contains(base_name) == next.objects.contains(base_name) {
         continue
       }
       let coordinate = "\{owner}.\{name}"

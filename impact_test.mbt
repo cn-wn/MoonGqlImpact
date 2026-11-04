@@ -277,3 +277,32 @@ test "literal conditions retain static query dependencies on every selection kin
     assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
   }
 }
+
+///|
+test "opaque custom scalar leaves detect object-to-scalar transitions" {
+  let old = source(
+    "old", "scalar Date type Query { launch: Date! event: Event } type Event { name: String }",
+  )
+  let next = source(
+    "next", "scalar Date scalar Event type Query { launch: Date! event: Event }",
+  )
+  let clients = [
+    @moongqlimpact.Client::{
+      name: "web",
+      sources: [source("query", "query Read { launch event { name } }")],
+    },
+  ]
+  assert_true(
+    @moongqlimpact.analyze_upgrade(old, old, clients).changes.is_empty(),
+  )
+  let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+  assert_eq(report.changes[0].coordinate, "Query.event")
+  assert_eq(report.changes[0].impacts[0].response_path, ["event"])
+  let bad = source(
+    "bad", "scalar Date type Date { name: String } type Query { launch: Date }",
+  )
+  let rejected = Ok(@moongqlimpact.analyze_upgrade(old, bad, clients)) catch {
+    error => Err(error)
+  }
+  assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+}
