@@ -140,9 +140,6 @@ fn Walk::visit(
           )
         }
         let coordinate = "\{owner}.\{field.name}"
-        guard self.schema.objects[owner].get(field.name) is Some(old) else {
-          raise Invalid(at, "baseline field does not exist: \{coordinate}")
-        }
         let next_path = path.copy()
         next_path.push(field.field_alias.unwrap_or(field.name))
         let key = next_path.join(".")
@@ -151,6 +148,17 @@ fn Walk::visit(
           raise Invalid(at, "conflicting selections for response path \{key}")
         }
         self.response_fields[key] = coordinate
+        if field.name == "__typename" {
+          if !field.selection_set.items.is_empty() {
+            raise Invalid(
+              at, "__typename is a scalar and forbids a selection set",
+            )
+          }
+          continue
+        }
+        guard self.schema.objects[owner].get(field.name) is Some(old) else {
+          raise Invalid(at, "baseline field does not exist: \{coordinate}")
+        }
         let child = named(old.kind)
         if self.schema.objects.contains(child) ==
           field.selection_set.items.is_empty() {

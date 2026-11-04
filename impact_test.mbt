@@ -179,3 +179,30 @@ test "repeated fragments deduplicate per path and keep distinct source sites" {
   assert_eq(impacts[2].response_path, ["b", "name"])
   assert_eq(impacts[2].selection, impacts[0].selection)
 }
+
+///|
+test "__typename can be aliased but cannot shadow another field at the same response path" {
+  let old = source("old", "type Query { name: String! }")
+  let next = source("next", "type Query { name: String }")
+  let query = source("query", "query Read { kind: __typename name }")
+  let report = @moongqlimpact.analyze_upgrade(old, next, [
+    @moongqlimpact.Client::{ name: "web", sources: [query], },
+  ])
+  assert_eq(report.changes[0].impacts[0].response_path, ["name"])
+  for
+    text in [
+      "query Read { kind: __typename kind: name }", "query Read { __typename { name } }",
+    ] {
+    let rejected = Ok(
+      @moongqlimpact.analyze_upgrade(old, next, [
+        @moongqlimpact.Client::{
+          name: "web",
+          sources: [source("query", text)],
+        },
+      ]),
+    ) catch {
+      error => Err(error)
+    }
+    assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+  }
+}
