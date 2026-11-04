@@ -4,7 +4,7 @@ MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query output
 
 ## Try the Apollo 11 example
 
-Install [MoonBit](https://www.moonbitlang.com/download/), clone this repository, and run from its root:
+Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261102), clone this repository, and run from its root:
 
 ```sh
 moon update

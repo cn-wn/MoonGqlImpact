@@ -16,6 +16,7 @@ pub(all) suberror AnalysisError {
 }
 
 // Types and methods
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Change {
   coordinate : String
   previous_type : String
@@ -23,11 +24,11 @@ pub(all) struct Change {
   baseline : Location
   proposed : Location?
   impacts : Array[Impact]
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn Change::equal(Self, Self) -> Bool
-pub fn Change::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Change::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Change::not_equal(Self, Self) -> Bool
-pub fn Change::to_json(Self) -> Json
+pub fn Change::to_json(Self) -> @json.Json
 pub fn Change::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Client {
@@ -35,36 +36,39 @@ pub(all) struct Client {
   sources : Array[Source]
 }
 
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Impact {
   client : String
   operation : String
   response_path : Array[String]
   selection : Location
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn Impact::equal(Self, Self) -> Bool
-pub fn Impact::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Impact::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Impact::not_equal(Self, Self) -> Bool
-pub fn Impact::to_json(Self) -> Json
+pub fn Impact::to_json(Self) -> @json.Json
 pub fn Impact::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Location {
   path : String
   line : Int32
   column : Int32
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn Location::equal(Self, Self) -> Bool
-pub fn Location::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Location::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Location::not_equal(Self, Self) -> Bool
-pub fn Location::to_json(Self) -> Json
+pub fn Location::to_json(Self) -> @json.Json
 pub fn Location::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Report {
   changes : Array[Change]
-} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+}
 pub fn Report::equal(Self, Self) -> Bool
-pub fn Report::from_json(Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Report::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
 pub fn Report::not_equal(Self, Self) -> Bool
-pub fn Report::to_json(Self) -> Json
+pub fn Report::to_json(Self) -> @json.Json
 pub fn Report::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Source {
