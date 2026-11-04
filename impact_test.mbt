@@ -156,3 +156,26 @@ test "syntactic depth accepts the limit and rejects deeper types" {
   }
   assert_eq(at.path, "deep")
 }
+
+///|
+test "repeated fragments deduplicate per path and keep distinct source sites" {
+  let old = source(
+    "old", "type Query { person: Person } type Person { name: String! }",
+  )
+  let next = source(
+    "next", "type Query { person: Person } type Person { name: String }",
+  )
+  let query = source(
+    "client", "query Read { a: person { ...Name ...Name name } b: person { ...Name } } fragment Name on Person { name }",
+  )
+  let report = @moongqlimpact.analyze_upgrade(old, next, [
+    @moongqlimpact.Client::{ name: "web", sources: [query], },
+  ])
+  let impacts = report.changes[0].impacts
+  assert_eq(impacts.length(), 3)
+  assert_eq(impacts[0].response_path, ["a", "name"])
+  assert_eq(impacts[1].response_path, ["a", "name"])
+  assert_true(impacts[0].selection.column != impacts[1].selection.column)
+  assert_eq(impacts[2].response_path, ["b", "name"])
+  assert_eq(impacts[2].selection, impacts[0].selection)
+}

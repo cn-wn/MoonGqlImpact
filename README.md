@@ -23,7 +23,7 @@ Exit status **0** means no regression within the supported profile. **1** means 
 
 ## Library
 
-Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values and client-grouped query files. The report carries old and proposed field types and locations, plus client, operation, aliased response path and query location for each observed impact. It is JSON-serializable. Files are visited in input and declaration order.
+Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values and client-grouped query files. The report carries old and proposed field types and locations, plus client, operation, aliased response path and query location for each observed impact. It is JSON-serializable. Files are visited in input and declaration order. Repeated spreads of the same fragment at the same response path produce one impact per source selection. Other aliases and separately written selections retain their own evidence.
 
 ## Supported profile
 

@@ -104,6 +104,7 @@ priv struct Walk {
   seen_fragments : Set[String]
   active : Set[String]
   response_fields : Map[String, String]
+  reported : Set[(String, String, Int32, Int32)]
   mut budget : Int32
 }
 
@@ -157,16 +158,15 @@ fn Walk::visit(
             at, "object fields require a selection set and scalar fields forbid it",
           )
         }
-        if self.changes.get(coordinate) is Some(change) {
+        if self.changes.get(coordinate) is Some(change) &&
+          self.reported.add_and_check((key, at.path, at.line, at.column)) {
           let impact = {
             client: self.client,
             operation: self.operation,
             response_path: next_path,
             selection: at,
           }
-          if !change.impacts.contains(impact) {
-            change.impacts.push(impact)
-          }
+          change.impacts.push(impact)
         }
         if !field.selection_set.items.is_empty() {
           self.visit(child, source, field.selection_set, next_path, depth + 1)
@@ -268,6 +268,7 @@ pub fn analyze_upgrade(
         seen_fragments,
         active: Set([]),
         response_fields: Map([]),
+        reported: Set([]),
         budget: 100000,
       }
       walk.visit(old.root, file, query.selection_set, [], 0)
