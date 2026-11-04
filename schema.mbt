@@ -6,11 +6,12 @@ pub(all) struct Source {
 }
 
 ///|
+#derive(ToJson, FromJson, Eq, Debug)
 pub(all) struct Location {
   path : String
   line : Int32
   column : Int32
-} derive(ToJson, FromJson, Eq, Debug)
+}
 
 ///|
 pub(all) suberror AnalysisError {

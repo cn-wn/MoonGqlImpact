@@ -6,14 +6,16 @@ pub(all) struct Client {
 }
 
 ///|
+#derive(ToJson, FromJson, Eq, Debug)
 pub(all) struct Impact {
   client : String
   operation : String
   response_path : Array[String]
   selection : Location
-} derive(ToJson, FromJson, Eq, Debug)
+}
 
 ///|
+#derive(ToJson, FromJson, Eq, Debug)
 pub(all) struct Change {
   coordinate : String
   previous_type : String
@@ -21,12 +23,13 @@ pub(all) struct Change {
   baseline : Location
   proposed : Location?
   impacts : Array[Impact]
-} derive(ToJson, FromJson, Eq, Debug)
+}
 
 ///|
+#derive(ToJson, FromJson, Eq, Debug)
 pub(all) struct Report {
   changes : Array[Change]
-} derive(ToJson, FromJson, Eq, Debug)
+}
 
 ///|
 priv struct Catalog {
