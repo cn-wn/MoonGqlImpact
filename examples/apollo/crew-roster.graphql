@@ -1,0 +1,7 @@
+query CrewRoster {
+  missions {
+    crew {
+      name
+    }
+  }
+}

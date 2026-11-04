@@ -1,0 +1,68 @@
+name: Verify
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [wasm, wasm-gc, js]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install stable MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - run: moon version --all
+      - run: moon update
+      - run: moon check --target ${{ matrix.target }} --deny-warn
+      - run: moon test --target ${{ matrix.target }} --deny-warn
+      - run: moon fmt && moon info --target ${{ matrix.target }} && git diff --exit-code
+  native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2025-vs2026]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable MoonBit (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Install stable MoonBit (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MOON_HOME: D:/gql-moon
+          MOONC_OVERRIDE: D:/gql-moon/bin/moonc.exe
+        run: |
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value 'D:/gql-moon/bin'
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value 'MOON_HOME=D:/gql-moon'
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value 'MOONC_OVERRIDE=D:/gql-moon/bin/moonc.exe'
+      - run: moon version --all
+      - run: moon update
+      - name: Check and run native tests (Unix)
+        if: runner.os != 'Windows'
+        run: moon check --target native --deny-warn && moon test --target native --deny-warn
+      - name: Check and run native tests (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          MOON_CC: cl
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          moon check --target native --deny-warn && moon test --target native --deny-warn
+      - name: Run documented Apollo demo
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/demo.mbtx

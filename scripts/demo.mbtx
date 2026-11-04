@@ -1,0 +1,46 @@
+----
+import {
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/json",
+  "moonbitlang/async@0.22.5",
+}
+----
+
+async fn demo() -> Unit {
+  let old = "examples/apollo/old.graphql"
+  let next = "examples/apollo/new.graphql"
+  let prefix = ["run", "cmd/check", "--target", "native", "--"]
+  let files = [
+    "flight-board", "examples/apollo/flight-board.graphql",
+    "flight-board", "examples/apollo/launch-date.graphql",
+    "crew-roster", "examples/apollo/crew-roster.graphql",
+  ]
+  let clean = @shell.Cmd("moon", [..prefix, old, old, ..files]).output()
+  clean.check()
+  assert_eq(@json.parse(clean.stdout()).stringify(), "{\"changes\":[]}")
+  let changed = @shell.Cmd("moon", [..prefix, old, next, ..files]).output()
+  assert_eq(changed.exit_code(), 1)
+  let report = @json.parse(changed.stdout())
+  guard report is { "changes": [
+    { "coordinate": "Mission.launchDate", "impacts": [
+      { "client": "flight-board", "response_path": ["missions", "launch"], .. },
+    ], .. },
+    { "coordinate": "Mission.crew", "impacts": [
+      { "client": "crew-roster", "response_path": ["missions", "crew"], .. },
+    ], .. },
+  ], .. } else {
+    fail("unexpected Apollo upgrade report: " + changed.stdout())
+  }
+  let invalid = @shell.Cmd(
+    "moon",
+    [..prefix, old, next, "web", "examples/apollo/launch-date.graphql"],
+  ).output()
+  assert_eq(invalid.exit_code(), 2)
+  assert_true(invalid.stdout().contains("client must define a named query"))
+  println("Apollo CLI demo passed (exit codes 0, 1, 2)")
+}
+
+///|
+fn main {
+  @async.run_async_main(demo)
+}

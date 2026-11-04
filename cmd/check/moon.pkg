@@ -1,0 +1,13 @@
+import {
+  "cn-wn/moongqlimpact" @impact,
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/x/fs",
+  "moonbitlang/x/sys",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

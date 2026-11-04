@@ -1,0 +1,3 @@
+fragment LaunchDate on Mission {
+  launch: launchDate
+}

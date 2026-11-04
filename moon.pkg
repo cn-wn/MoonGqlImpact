@@ -1,0 +1,5 @@
+import {
+  "moonbit-community/graphql/parser" @gql,
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}

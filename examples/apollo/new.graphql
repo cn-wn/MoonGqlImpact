@@ -1,0 +1,13 @@
+type Query {
+  missions: [Mission!]!
+}
+
+type Mission {
+  name: String!
+  launchDate: String
+  crew: [Astronaut]!
+}
+
+type Astronaut {
+  name: String!
+}
