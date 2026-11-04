@@ -109,6 +109,37 @@ priv struct Walk {
 }
 
 ///|
+fn validate_selection_directives(
+  source : Source,
+  directives : Array[@gql.Directive],
+) -> Unit raise AnalysisError {
+  if directives.is_empty() {
+    return
+  }
+  let seen = Set([])
+  for directive in directives {
+    let at = source.at(directive.position)
+    let name = directive.name
+    if name != "skip" && name != "include" {
+      raise Unsupported(at, "unsupported selection directive @\{name}")
+    }
+    if !seen.add_and_check(name) {
+      raise Invalid(at, "duplicate @\{name} directive")
+    }
+    match directive.arguments {
+      [("if", BooleanValue(_))] => ()
+      [("if", Variable(_))] =>
+        raise Unsupported(
+          at,
+          "@\{name} requires a literal boolean in this profile",
+        )
+      _ =>
+        raise Invalid(at, "@\{name} requires exactly one boolean if argument")
+    }
+  }
+}
+
+///|
 fn Walk::visit(
   self : Walk,
   owner : String,
@@ -134,11 +165,12 @@ fn Walk::visit(
     match selection {
       FieldSelection(field) => {
         let at = source.at(field.position)
-        if !field.arguments.is_empty() || !field.directives.is_empty() {
+        if !field.arguments.is_empty() {
           raise Unsupported(
-            at, "selection arguments and directives are outside the output profile",
+            at, "selection arguments are outside the output profile",
           )
         }
+        validate_selection_directives(source, field.directives)
         let coordinate = "\{owner}.\{field.name}"
         let next_path = path.copy()
         next_path.push(field.field_alias.unwrap_or(field.name))
@@ -187,11 +219,13 @@ fn Walk::visit(
           raise Invalid(at, "missing fragment: \{name}")
         }
         let On(condition) = fragment.type_condition
-        if !spread.directives.is_empty() || !fragment.directives.is_empty() {
+        if !fragment.directives.is_empty() {
           raise Unsupported(
-            at, "fragment directives are outside the output profile",
+            file.at(fragment.position),
+            "fragment definition directives are outside the output profile",
           )
         }
+        validate_selection_directives(source, spread.directives)
         if condition != owner || self.active.contains(name) {
           raise Invalid(at, "inapplicable or cyclic fragment: \{name}")
         }
@@ -202,11 +236,7 @@ fn Walk::visit(
       }
       InlineFragmentSelection(fragment) => {
         let at = source.at(fragment.position)
-        if !fragment.directives.is_empty() {
-          raise Unsupported(
-            at, "fragment directives are outside the output profile",
-          )
-        }
+        validate_selection_directives(source, fragment.directives)
         if fragment.type_condition is Some(On(condition)) && condition != owner {
           raise Invalid(at, "inapplicable fragment type: \{condition}")
         }

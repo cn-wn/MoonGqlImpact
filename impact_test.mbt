@@ -244,3 +244,36 @@ test "deprecated fields remain selectable until removed" {
   }
   assert_true(rejected is Err(@moongqlimpact.Unsupported(_, _)))
 }
+
+///|
+test "literal conditions retain static query dependencies on every selection kind" {
+  let old = source("old", "type Query { keep: String lost: String }")
+  let next = source("next", "type Query { keep: String }")
+  let query = source(
+    "query", "query Read { a: lost @skip(if: true) ...Selected @include(if: false) ... on Query @skip(if: false) { c: lost } } fragment Selected on Query { b: lost }",
+  )
+  let report = @moongqlimpact.analyze_upgrade(old, next, [
+    @moongqlimpact.Client::{ name: "web", sources: [query], },
+  ])
+  assert_eq(
+    report.changes[0].impacts.map(fn(impact) { impact.response_path }),
+    [["a"], ["b"], ["c"]],
+  )
+  for
+    text in [
+      "query Read { keep @skip(if: 1) }", "query Read { keep @include(if: true) @include(if: false) }",
+      "query Read { missing @skip(if: true) }",
+    ] {
+    let rejected = Ok(
+      @moongqlimpact.analyze_upgrade(old, next, [
+        @moongqlimpact.Client::{
+          name: "web",
+          sources: [source("query", text)],
+        },
+      ]),
+    ) catch {
+      error => Err(error)
+    }
+    assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+  }
+}
