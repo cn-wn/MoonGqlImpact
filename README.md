@@ -29,7 +29,7 @@ Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values a
 
 ## Supported profile
 
-Query-only SDL with object types, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Scalar directives are rejected. Executable documents support named queries, aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
+Query-only SDL with object types, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Scalar directives are rejected. Executable documents support named queries or a sole anonymous query per client (reported as `<anonymous>`), aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
 
 Use `extend type` to add fields to an existing object within the same SDL snapshot. Extended fields retain their declaration locations. An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
 

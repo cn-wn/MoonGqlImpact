@@ -53,6 +53,19 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
       )
     }
     for def in doc.definitions {
+      let def : @gql.QueryDefinition = match def {
+        OperationDefinition(SelectionSetOperation(selection_set)) =>
+          OperationDefinition(
+            QueryOperation({
+              position: selection_set.span.0,
+              name: None,
+              variable_definitions: [],
+              directives: [],
+              selection_set,
+            }),
+          )
+        _ => def
+      }
       match def {
         FragmentDefinition(fragment) => {
           if fragments.contains(fragment.name) {
@@ -65,13 +78,13 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
         }
         OperationDefinition(QueryOperation(query)) => {
           let at = source.at(query.position)
-          guard query.name is Some(name) &&
-            query.variable_definitions.is_empty() &&
+          guard query.variable_definitions.is_empty() &&
             query.directives.is_empty() else {
             raise Unsupported(
-              at, "use a named query without variables or directives",
+              at, "use a query without variables or operation directives",
             )
           }
+          let name = query.name.unwrap_or("<anonymous>")
           if operations.contains(name) {
             raise Invalid(at, "duplicate operation: \{name}")
           }
@@ -80,7 +93,7 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
         _ =>
           raise Unsupported(
             { path: source.path, line: 1, column: 1, },
-            "only named query operations are supported",
+            "only query operations are supported",
           )
       }
     }
@@ -88,7 +101,14 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
   if operations.is_empty() {
     raise Invalid(
       { path: client.name, line: 1, column: 1, },
-      "client must define a named query",
+      "client must define a query",
+    )
+  }
+  if operations.length() > 1 &&
+    operations.get("<anonymous>") is Some((file, query)) {
+    raise Invalid(
+      file.at(query.position),
+      "an anonymous query must be the client's only operation",
     )
   }
   { fragments, operations, }

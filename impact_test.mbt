@@ -335,3 +335,26 @@ test "object extensions resolve forward declarations and retain field locations"
     assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
   }
 }
+
+///|
+test "sole anonymous queries report impacts for shorthand and explicit syntax" {
+  let old = source("old", "type Query { name: String! }")
+  let next = source("new", "type Query { name: String }")
+  for query in ["{ name }", "query { name }"] {
+    let report = @moongqlimpact.analyze_upgrade(old, next, [
+      @moongqlimpact.Client::{ name: "web", sources: [source("query", query)], },
+    ])
+    assert_eq(report.changes[0].impacts[0].operation, "<anonymous>")
+  }
+  let mixed = Ok(
+    @moongqlimpact.analyze_upgrade(old, next, [
+      @moongqlimpact.Client::{
+        name: "web",
+        sources: [source("a", "{ name }"), source("b", "query Other { name }")],
+      },
+    ]),
+  ) catch {
+    error => Err(error)
+  }
+  assert_true(mixed is Err(@moongqlimpact.Invalid(_, _)))
+}

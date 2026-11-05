@@ -36,7 +36,7 @@ async fn demo() -> Unit {
     [..prefix, old, next, "web", "examples/apollo/launch-date.graphql"],
   ).output()
   assert_eq(invalid.exit_code(), 2)
-  assert_true(invalid.stdout().contains("client must define a named query"))
+  assert_true(invalid.stdout().contains("client must define a query"))
   let unused = ["names", "examples/apollo/mission-names.graphql"]
   let global = @shell.Cmd("moon", [..prefix, old, next, ..unused]).output()
   let observed = @shell.Cmd(
