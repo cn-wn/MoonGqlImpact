@@ -78,10 +78,9 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
         }
         OperationDefinition(QueryOperation(query)) => {
           let at = source.at(query.position)
-          guard query.variable_definitions.is_empty() &&
-            query.directives.is_empty() else {
+          guard query.directives.is_empty() else {
             raise Unsupported(
-              at, "use a query without variables or operation directives",
+              at, "operation directives are outside the output profile",
             )
           }
           let name = query.name.unwrap_or("<anonymous>")
@@ -125,11 +124,14 @@ priv struct Walk {
   active : Set[String]
   response_fields : Map[String, String]
   reported : Set[(String, String, Int32, Int32)]
+  variables : Map[String, Location]
+  used_variables : Set[String]
   mut budget : Int32
 }
 
 ///|
-fn validate_selection_directives(
+fn Walk::validate_selection_directives(
+  self : Walk,
   source : Source,
   directives : Array[@gql.Directive],
 ) -> Unit raise AnalysisError {
@@ -148,11 +150,12 @@ fn validate_selection_directives(
     }
     match directive.arguments {
       [("if", BooleanValue(_))] => ()
-      [("if", Variable(_))] =>
-        raise Unsupported(
-          at,
-          "@\{name} requires a literal boolean in this profile",
-        )
+      [("if", Variable(variable))] => {
+        if !self.variables.contains(variable) {
+          raise Invalid(at, "undefined condition variable \{variable}")
+        }
+        self.used_variables.add(variable)
+      }
       _ =>
         raise Invalid(at, "@\{name} requires exactly one boolean if argument")
     }
@@ -190,7 +193,7 @@ fn Walk::visit(
             at, "selection arguments are outside the output profile",
           )
         }
-        validate_selection_directives(source, field.directives)
+        self.validate_selection_directives(source, field.directives)
         let coordinate = "\{owner}.\{field.name}"
         let next_path = path.copy()
         next_path.push(field.field_alias.unwrap_or(field.name))
@@ -245,7 +248,7 @@ fn Walk::visit(
             "fragment definition directives are outside the output profile",
           )
         }
-        validate_selection_directives(source, spread.directives)
+        self.validate_selection_directives(source, spread.directives)
         if condition != owner || self.active.contains(name) {
           raise Invalid(at, "inapplicable or cyclic fragment: \{name}")
         }
@@ -256,7 +259,7 @@ fn Walk::visit(
       }
       InlineFragmentSelection(fragment) => {
         let at = source.at(fragment.position)
-        validate_selection_directives(source, fragment.directives)
+        self.validate_selection_directives(source, fragment.directives)
         if fragment.type_condition is Some(On(condition)) && condition != owner {
           raise Invalid(at, "inapplicable fragment type: \{condition}")
         }
@@ -320,6 +323,28 @@ pub fn analyze_upgrade(
     let catalog = catalog(client)
     let seen_fragments = Set([])
     for operation, (file, query) in catalog.operations {
+      let variables = Map([])
+      for definition in query.variable_definitions {
+        let at = file.at(definition.position)
+        if variables.contains(definition.name) {
+          raise Invalid(at, "duplicate variable: \{definition.name}")
+        }
+        match (definition.var_type, definition.default_value) {
+          (NonNullType(NamedType("Boolean")), None | Some(BooleanValue(_)))
+          | (NamedType("Boolean"), Some(BooleanValue(_))) => ()
+          (NamedType("Boolean"), None | Some(NullValue)) =>
+            raise Unsupported(
+              at, "nullable condition variables require a boolean default",
+            )
+          (NamedType("Boolean") | NonNullType(NamedType("Boolean")), _) =>
+            raise Invalid(at, "condition variable default must be a boolean")
+          _ =>
+            raise Unsupported(
+              at, "only boolean condition variables are supported",
+            )
+        }
+        variables[definition.name] = at
+      }
       let walk = {
         schema: old,
         catalog,
@@ -330,9 +355,16 @@ pub fn analyze_upgrade(
         active: Set([]),
         response_fields: Map([]),
         reported: Set([]),
+        variables,
+        used_variables: Set([]),
         budget: 100000,
       }
       walk.visit(old.root, file, query.selection_set, [], 0)
+      for name, at in variables {
+        if !walk.used_variables.contains(name) {
+          raise Invalid(at, "unused condition variable \{name}")
+        }
+      }
     }
     for name, (source, fragment) in catalog.fragments {
       if !seen_fragments.contains(name) {

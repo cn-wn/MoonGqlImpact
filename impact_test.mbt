@@ -358,3 +358,36 @@ test "sole anonymous queries report impacts for shorthand and explicit syntax" {
   }
   assert_true(mixed is Err(@moongqlimpact.Invalid(_, _)))
 }
+
+///|
+test "condition variables resolve through fragments per operation" {
+  let old = source("old", "type Query { flag: Boolean! }")
+  let next = source("new", "type Query { flag: Boolean }")
+  let fragment = source(
+    "fragment", "fragment Flag on Query { flag @include(if: $show) }",
+  )
+  let query = source(
+    "query", "query One($show: Boolean!) { ...Flag } query Two($show: Boolean = false) { ...Flag }",
+  )
+  let clients = [
+    @moongqlimpact.Client::{ name: "web", sources: [query, fragment], },
+  ]
+  let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+  assert_eq(report.changes[0].impacts.map(fn(impact) { impact.operation }), [
+    "One", "Two",
+  ])
+  let query = source(
+    "query", "query One($show: Boolean!) { ...Flag } query Two { ...Flag }",
+  )
+  let result = Ok(
+    @moongqlimpact.analyze_upgrade(old, next, [
+      @moongqlimpact.Client::{ name: "web", sources: [query, fragment], },
+    ]),
+  ) catch {
+    error => Err(error)
+  }
+  guard result is Err(@moongqlimpact.Invalid(at, _)) else {
+    fail("expected undefined variable")
+  }
+  assert_eq(at.path, "fragment")
+}

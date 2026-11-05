@@ -33,9 +33,9 @@ Query-only SDL with object types, a default or explicit query root, built-in and
 
 Use `extend type` to add fields to an existing object within the same SDL snapshot. Extended fields retain their declaration locations. An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
 
-Selections may use `@include(if: true)` or `@skip(if: false)` with either literal boolean. The report retains dependencies in every branch because GraphQL validates fields before evaluating execution directives.
+Selections may use `@include(if: true)` or `@skip(if: false)` with either literal boolean or a Boolean variable declared by the operation. Use `Boolean!` or `Boolean` with a non-null boolean default. The report retains dependencies in every branch because GraphQL validates fields before evaluating execution directives.
 
-The checker rejects parameters and variables, other directives, interfaces and unions, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects field arguments and variables outside those condition directives, other directives, interfaces and unions, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and roadmap
 
