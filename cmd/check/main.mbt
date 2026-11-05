@@ -12,7 +12,22 @@ fn read_source(path : String) -> @impact.Source raise {
 }
 
 ///|
+fn usage() -> Unit {
+  println("Usage: check --schema-only OLD.graphql NEW.graphql")
+  println(
+    "Usage: check [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
+  )
+  println(
+    "Exit status: 0 passes the selected policy, 1 blocks the upgrade, 2 indicates an input error.",
+  )
+}
+
+///|
 fn run(args : Array[String]) -> Int32 raise {
+  if args.length() == 2 && (args[1] == "--help" || args[1] == "-h") {
+    usage()
+    return 0
+  }
   let observed_only = args.get(1) == Some("--observed-only")
   let schema_only = args.get(1) == Some("--schema-only")
   let first = if observed_only || schema_only { 2 } else { 1 }
@@ -23,10 +38,7 @@ fn run(args : Array[String]) -> Int32 raise {
     input_count >= 4 && input_count % 2 == 0
   }
   if !valid {
-    println("Usage: check --schema-only OLD.graphql NEW.graphql")
-    println(
-      "Usage: check [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
-    )
+    usage()
     return 2
   }
   let baseline = read_source(args[first])

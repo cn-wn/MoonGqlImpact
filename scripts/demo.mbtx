@@ -15,6 +15,10 @@ async fn demo() -> Unit {
     "flight-board", "examples/apollo/launch-date.graphql",
     "crew-roster", "examples/apollo/crew-roster.graphql",
   ]
+  let help = @shell.Cmd("moon", [..prefix, "--help"]).output()
+  help.check()
+  assert_true(help.stdout().contains("--observed-only"))
+  assert_true(help.stdout().contains("--schema-only"))
   let clean = @shell.Cmd("moon", [..prefix, old, old, ..files]).output()
   clean.check()
   assert_eq(@json.parse(clean.stdout()).stringify(), "{\"changes\":[]}")

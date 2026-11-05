@@ -2,6 +2,8 @@
 
 MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query output upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field or a weakened output type. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
 
+See the [0.1.0 release notes](CHANGELOG.md) and the [checked library example](README.mbt.md).
+
 ## Try the Apollo 11 example
 
 Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261102), clone this repository, and run from its root:
@@ -18,6 +20,8 @@ Exit status **0** means no regression within the supported profile. **1** means 
 For a rollout gated on known consumers, pass `--observed-only` before the two schema paths. The CLI still emits the full report and returns **1** only if a registered operation has an impact. Invalid or unsupported inputs still return **2**. A report with no observed impact only describes the supplied catalog.
 
 For an initial rollout without a client catalog, run `moon run cmd/check --target native -- --schema-only OLD.graphql NEW.graphql`. The report shows global regressions with empty impact lists, and any regression returns **1**. This mode takes only the two schema paths.
+
+Run `moon run cmd/check --target native -- --help` to see the accepted command forms and exit codes.
 
 ## Where to use it
 
