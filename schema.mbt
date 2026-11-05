@@ -33,6 +33,7 @@ priv struct IndexedField {
 ///|
 priv struct Schema {
   root : String
+  enums : Map[String, String]
   objects : Map[String, Map[String, IndexedField]]
 }
 
@@ -53,7 +54,7 @@ fn builtin(name : String) -> Bool {
 }
 
 ///|
-fn validate_field_directives(
+fn validate_deprecation(
   source : Source,
   directives : Array[@gql.Directive],
 ) -> Unit raise AnalysisError {
@@ -61,10 +62,7 @@ fn validate_field_directives(
   for directive in directives {
     let at = source.at(directive.position)
     if directive.name != "deprecated" {
-      raise Unsupported(
-        at,
-        "unsupported schema field directive @\{directive.name}",
-      )
+      raise Unsupported(at, "unsupported schema directive @\{directive.name}")
     }
     if deprecated {
       raise Invalid(at, "duplicate @deprecated directive")
@@ -94,7 +92,7 @@ fn index_fields(
     if !field.arguments.is_empty() {
       raise Unsupported(at, "schema arguments are outside the output profile")
     }
-    validate_field_directives(source, field.directives)
+    validate_deprecation(source, field.directives)
     fields[field.name] = { kind: field.field_type, at, }
   }
 }
@@ -108,6 +106,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   }
   let objects = Map([])
   let scalars = Set([])
+  let enums = Map([])
   let extensions = []
   let mut root = None
   for definition in doc.definitions {
@@ -137,14 +136,49 @@ fn index(source : Source) -> Schema raise AnalysisError {
         if builtin(scalar.name) ||
           scalar.name.has_prefix("__") ||
           objects.contains(scalar.name) ||
+          enums.contains(scalar.name) ||
           !scalars.add_and_check(scalar.name) {
           raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
         }
+      }
+      TypeDef(EnumTypeDef(enum_type)) => {
+        let at = source.at(enum_type.position)
+        let name = enum_type.name
+        if !enum_type.directives.is_empty() {
+          raise Unsupported(
+            at, "enum type directives are outside the output profile",
+          )
+        }
+        if builtin(name) ||
+          name.has_prefix("__") ||
+          enums.contains(name) ||
+          scalars.contains(name) ||
+          objects.contains(name) {
+          raise Invalid(at, "duplicate or reserved enum: \{name}")
+        }
+        let values = Set([])
+        for value in enum_type.values {
+          let at = source.at(value.position)
+          if value.name.has_prefix("__") || !values.add_and_check(value.name) {
+            raise Invalid(at, "duplicate or reserved enum value: \{value.name}")
+          }
+          validate_deprecation(source, value.directives)
+        }
+        if values.is_empty() {
+          raise Invalid(at, "enum must define at least one value")
+        }
+        let sorted = []
+        for value in values {
+          sorted.push(value)
+        }
+        sorted.sort()
+        enums[name] = sorted.join(", ")
       }
       TypeDef(ObjectTypeDef(object)) => {
         let at = source.at(object.position)
         if objects.contains(object.name) ||
           scalars.contains(object.name) ||
+          enums.contains(object.name) ||
           builtin(object.name) ||
           object.name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved object: \{object.name}")
@@ -165,7 +199,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       TypeExt(ObjectTypeExt(extension)) => extensions.push(extension)
       _ =>
         raise Unsupported(
-          start, "only object definitions, object field extensions, scalar definitions and a query root are supported",
+          start, "only object definitions, object field extensions, scalar and enum definitions and a query root are supported",
         )
     }
   }
@@ -199,12 +233,15 @@ fn index(source : Source) -> Schema raise AnalysisError {
   for _, fields in objects {
     for _, field in fields {
       let name = named(field.kind)
-      if !builtin(name) && !objects.contains(name) && !scalars.contains(name) {
+      if !builtin(name) &&
+        !objects.contains(name) &&
+        !scalars.contains(name) &&
+        !enums.contains(name) {
         raise Invalid(field.at, "undefined output type: \{name}")
       }
     }
   }
-  { root, objects, }
+  { root, objects, enums, }
 }
 
 ///|
@@ -221,10 +258,14 @@ fn preserves(old : @gql.GqlType, next : @gql.GqlType) -> Bool {
 }
 
 ///|
-fn type_text(kind : @gql.GqlType) -> String {
+fn Schema::type_text(self : Schema, kind : @gql.GqlType) -> String {
   match kind {
-    NamedType(name) => name
-    ListType(item) => "[\{type_text(item)}]"
-    NonNullType(inner) => "\{type_text(inner)}!"
+    NamedType(name) =>
+      match self.enums.get(name) {
+        Some(values) => name + "{" + values + "}"
+        None => name
+      }
+    ListType(item) => "[\{self.type_text(item)}]"
+    NonNullType(inner) => "\{self.type_text(inner)}!"
   }
 }

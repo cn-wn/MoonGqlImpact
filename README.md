@@ -37,10 +37,12 @@ Use `extend type` to add fields to an existing object within the same SDL snapsh
 
 Selections may use `@include(if: true)` or `@skip(if: false)` with either literal boolean or a Boolean variable declared by the operation. Use `Boolean!` or `Boolean` with a non-null boolean default. The report retains dependencies in every branch because GraphQL validates fields before evaluating execution directives.
 
-The checker rejects field arguments and variables outside those condition directives, other directives, interfaces and unions, enums, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+Output enums are checked by value set. Adding or removing a value flags affected fields and registered queries. Additions can affect exhaustive client code, and removals change the documented result domain. Both are gated conservatively. Reports render enum domains as `Status{READY, WAITING}` inside their original list and nullability wrappers.
+
+The checker rejects field arguments and variables outside those condition directives, other directives, interfaces and unions, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and roadmap
 
 The [moonbit-community/graphql parser](https://github.com/moonbit-community/graphql.mbt) (Apache-2.0, 0.1.1) provides GraphQL syntax and positions. The output comparison and operation tracing are implemented here. The [GraphQL October 2021 specification](https://spec.graphql.org/October2021/) is the semantic reference. [NASA Apollo 11](https://www.nasa.gov/mission/apollo-11/) is the factual source for the launch date and crew names. The example schemas and queries are authored for this repository. The native CLI uses [moonbitlang/x](https://github.com/moonbitlang/x) (Apache-2.0). The [MoonBit async package](https://github.com/moonbitlang/async) (Apache-2.0) runs the end-to-end check with `moon run --deny-warn scripts/demo.mbtx`.
 
-Next capabilities are input compatibility, then enum and abstract output impact. Project license is Apache-2.0.
+Next capabilities are input compatibility, then abstract output impact. Project license is Apache-2.0.

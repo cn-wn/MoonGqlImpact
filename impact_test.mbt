@@ -391,3 +391,41 @@ test "condition variables resolve through fragments per operation" {
   }
   assert_eq(at.path, "fragment")
 }
+
+///|
+test "output enum changes retain client evidence and ignore declaration order" {
+  let old = source(
+    "old", "enum Status { READY WAITING } type Query { statuses: [Status!]! }",
+  )
+  let reordered = source(
+    "reordered", "enum Status { WAITING READY } type Query { statuses: [Status!]! }",
+  )
+  let clients = [
+    @moongqlimpact.Client::{
+      name: "board",
+      sources: [source("query", "query Read { state: statuses }")],
+    },
+  ]
+  assert_true(
+    @moongqlimpact.analyze_upgrade(old, reordered, clients).changes.is_empty(),
+  )
+  for values in ["READY WAITING DONE", "READY"] {
+    let proposed = source(
+      "new",
+      "enum Status { " + values + " } type Query { statuses: [Status!]! }",
+    )
+    let report = @moongqlimpact.analyze_upgrade(old, proposed, clients)
+    assert_eq(report.changes.length(), 1)
+    let change = report.changes[0]
+    assert_eq(change.previous_type, "[Status{READY, WAITING}!]!")
+    assert_true(change.proposed_type != Some(change.previous_type))
+    assert_eq(change.impacts[0].response_path, ["state"])
+  }
+  let malformed = source(
+    "invalid", "enum Status { READY READY } type Query { statuses: [Status!]! }",
+  )
+  let rejected = Ok(@moongqlimpact.analyze_upgrade(old, malformed, clients)) catch {
+    error => Err(error)
+  }
+  assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
+}

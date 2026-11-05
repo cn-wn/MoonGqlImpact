@@ -295,14 +295,15 @@ pub fn analyze_upgrade(
       let base_name = named(field.kind)
       if candidate is Some(new_field) &&
         preserves(field.kind, new_field.kind) &&
-        old.objects.contains(base_name) == next.objects.contains(base_name) {
+        old.objects.contains(base_name) == next.objects.contains(base_name) &&
+        old.enums.get(base_name) == next.enums.get(base_name) {
         continue
       }
       let coordinate = "\{owner}.\{name}"
       let change = {
         coordinate,
-        previous_type: type_text(field.kind),
-        proposed_type: candidate.map(fn(f) { type_text(f.kind) }),
+        previous_type: old.type_text(field.kind),
+        proposed_type: candidate.map(fn(f) { next.type_text(f.kind) }),
         baseline: field.at,
         proposed: candidate.map(fn(f) { f.at }),
         impacts: [],
