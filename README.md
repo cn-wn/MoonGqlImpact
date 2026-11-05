@@ -17,6 +17,8 @@ Exit status **0** means no regression within the supported profile. **1** means 
 
 For a rollout gated on known consumers, pass `--observed-only` before the two schema paths. The CLI still emits the full report and returns **1** only if a registered operation has an impact. Invalid or unsupported inputs still return **2**. A report with no observed impact only describes the supplied catalog.
 
+For an initial rollout without a client catalog, run `moon run cmd/check --target native -- --schema-only OLD.graphql NEW.graphql`. The report shows global regressions with empty impact lists, and any regression returns **1**. This mode takes only the two schema paths.
+
 ## Where to use it
 
 - **Server release gate.** Export the current and proposed SDL in a pull request. Check them with queries from the web and mobile clients. Use the reported locations to restore the old field contract or coordinate a client release.

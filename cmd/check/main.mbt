@@ -14,9 +14,16 @@ fn read_source(path : String) -> @impact.Source raise {
 ///|
 fn run(args : Array[String]) -> Int32 raise {
   let observed_only = args.get(1) == Some("--observed-only")
-  let first = if observed_only { 2 } else { 1 }
+  let schema_only = args.get(1) == Some("--schema-only")
+  let first = if observed_only || schema_only { 2 } else { 1 }
   let input_count = args.length() - first
-  if input_count < 4 || input_count % 2 != 0 {
+  let valid = if schema_only {
+    input_count == 2
+  } else {
+    input_count >= 4 && input_count % 2 == 0
+  }
+  if !valid {
+    println("Usage: check --schema-only OLD.graphql NEW.graphql")
     println(
       "Usage: check [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
     )

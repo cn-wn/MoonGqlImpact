@@ -52,7 +52,20 @@ async fn demo() -> Unit {
   ).output()
   assert_eq(affected.exit_code(), 1)
   assert_eq(@json.parse(affected.stdout()), report)
-  println("Apollo CLI demo passed (strict and observed-only policies)")
+  let schema_only = @shell.Cmd(
+    "moon",
+    [..prefix, "--schema-only", old, next],
+  ).output()
+  assert_eq(schema_only.exit_code(), 1)
+  assert_eq(@json.parse(schema_only.stdout()), @json.parse(global.stdout()))
+  let schema_clean = @shell.Cmd(
+    "moon",
+    [..prefix, "--schema-only", old, old],
+  ).output()
+  schema_clean.check()
+  let incomplete = @shell.Cmd("moon", [..prefix, old, next]).output()
+  assert_eq(incomplete.exit_code(), 2)
+  println("Apollo CLI demo passed (strict, observed-only, and schema-only policies)")
 }
 
 ///|
