@@ -41,7 +41,14 @@ priv struct Catalog {
 fn catalog(client : Client) -> Catalog raise AnalysisError {
   let fragments = Map([])
   let operations = Map([])
+  let paths = Set([])
   for source in client.sources {
+    if source.path == "" || !paths.add_and_check(source.path) {
+      raise Invalid(
+        { path: source.path, line: 1, column: 1, },
+        "operation sources require unique nonempty paths within each client",
+      )
+    }
     source.check_size()
     let doc = @gql.parse_query(source.text) catch {
       GraphQLParseError(message, pos) => raise Invalid(source.at(pos), message)

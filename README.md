@@ -33,7 +33,7 @@ Place `--markdown` before the policy flag to produce a readable report for a CI 
 
 ## Library
 
-Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values and client-grouped query files. The report carries old and proposed field types and locations, plus client, operation, aliased response path and query location for each observed impact. It is JSON-serializable. Use `report.to_markdown()` for a review report containing every change and client impact, with escaped catalog labels and source paths. Files are visited in input and declaration order. Repeated spreads of the same fragment at the same response path produce one impact per source selection. Other aliases and separately written selections retain their own evidence.
+Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values and client-grouped query files. The report carries old and proposed field types and locations, plus client, operation, aliased response path and query location for each observed impact. It is JSON-serializable. Use `report.to_markdown()` for a review report containing every change and client impact, with escaped catalog labels and source paths. Each client must supply unique, nonempty source paths so diagnostics and evidence can identify a file unambiguously. The same path may be used by different clients. Files are visited in input and declaration order. Repeated spreads of the same fragment at the same response path produce one impact per source selection. Other aliases and separately written selections retain their own evidence.
 
 ## Supported profile
 

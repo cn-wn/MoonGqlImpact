@@ -83,6 +83,13 @@ async fn demo() -> Unit {
   ).output()
   md_clean.check()
   assert_true(md_clean.stdout().contains("No output contract regressions"))
+  let duplicate_source = @shell.Cmd(
+    "moon",
+    [..prefix, old, next, "names", "examples/apollo/mission-names.graphql",
+      "names", "examples/apollo/mission-names.graphql"],
+  ).output()
+  assert_eq(duplicate_source.exit_code(), 2)
+  assert_true(duplicate_source.stdout().contains("unique nonempty paths"))
   let incomplete = @shell.Cmd("moon", [..prefix, old, next]).output()
   assert_eq(incomplete.exit_code(), 2)
   println("Apollo CLI demo passed (strict, observed-only, and schema-only policies)")

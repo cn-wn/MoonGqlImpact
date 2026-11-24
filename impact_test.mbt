@@ -523,3 +523,39 @@ test "Markdown preserves unobserved changes and escapes catalog labels" {
     .contains("No output contract regressions"),
   )
 }
+
+///|
+test "source identities cannot collapse distinct impact evidence" {
+  let old = source("old", "type Query { name: String! }")
+  let next = source("next", "type Query { name: String }")
+  for
+    files in [
+      [source("", "query Read { name }")],
+      [
+        source("same", "query One { name }"),
+        source("same", "query Two { name }"),
+      ],
+    ] {
+    let result = Ok(
+      @moongqlimpact.analyze_upgrade(old, next, [
+        @moongqlimpact.Client::{ name: "web", sources: files, },
+      ]),
+    ) catch {
+      error => Err(error)
+    }
+    guard result is Err(@moongqlimpact.Invalid(_, message)) else {
+      fail("expected source identity diagnostic")
+    }
+    assert_true(message.contains("unique nonempty paths"))
+  }
+  let file = source("shared/query.graphql", "query Read { name }")
+  let clients = [
+    @moongqlimpact.Client::{ name: "web", sources: [file], },
+    @moongqlimpact.Client::{ name: "mobile", sources: [file], },
+  ]
+  let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+  assert_eq(report.changes[0].impacts.length(), 2)
+  assert_eq(report.changes[0].impacts[0].client, "web")
+  assert_eq(report.changes[0].impacts[1].client, "mobile")
+  assert_eq(@moongqlimpact.analyze_upgrade(old, next, clients), report)
+}

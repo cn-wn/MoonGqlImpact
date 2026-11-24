@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Include values from enum extensions and track custom scalar specification URL changes through client queries.
+- Generate escaped Markdown reports from the library and native CLI with `--markdown`.
+- Reject repeated or empty operation source paths within a client to preserve unambiguous impact evidence.
+- Refresh generated interfaces against MoonBit 0.1.20261119.
+
 ## 0.1.0
 
 - Compare two local GraphQL SDL snapshots and trace output regressions to clients, operations, response paths and source positions.
