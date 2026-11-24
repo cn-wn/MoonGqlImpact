@@ -296,7 +296,8 @@ pub fn analyze_upgrade(
       if candidate is Some(new_field) &&
         preserves(field.kind, new_field.kind) &&
         old.objects.contains(base_name) == next.objects.contains(base_name) &&
-        old.enums.get(base_name) == next.enums.get(base_name) {
+        old.enums.get(base_name) == next.enums.get(base_name) &&
+        old.scalars.get(base_name) == next.scalars.get(base_name) {
         continue
       }
       let coordinate = "\{owner}.\{name}"

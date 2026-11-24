@@ -34,6 +34,7 @@ priv struct IndexedField {
 priv struct Schema {
   root : String
   enums : Map[String, String]
+  scalars : Map[String, String?]
   objects : Map[String, Map[String, IndexedField]]
 }
 
@@ -113,6 +114,28 @@ fn index_enum_values(
 }
 
 ///|
+fn scalar_specification(
+  source : Source,
+  directives : Array[@gql.Directive],
+) -> String? raise AnalysisError {
+  let mut specification = None
+  for directive in directives {
+    let at = source.at(directive.position)
+    if directive.name != "specifiedBy" {
+      raise Unsupported(at, "unsupported scalar directive @\{directive.name}")
+    }
+    if specification is Some(_) {
+      raise Invalid(at, "duplicate @specifiedBy directive")
+    }
+    guard directive.arguments is [("url", StringValue(url))] else {
+      raise Invalid(at, "@specifiedBy requires exactly one string url argument")
+    }
+    specification = Some(url)
+  }
+  specification
+}
+
+///|
 fn index(source : Source) -> Schema raise AnalysisError {
   let start = { path: source.path, line: 1, column: 1, }
   source.check_size()
@@ -120,7 +143,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
     GraphQLParseError(message, pos) => raise Invalid(source.at(pos), message)
   }
   let objects = Map([])
-  let scalars = Set([])
+  let scalars = Map([])
   let enums = Map([])
   let enum_values = Map([])
   let enum_extensions = []
@@ -145,18 +168,15 @@ fn index(source : Source) -> Schema raise AnalysisError {
       }
       TypeDef(ScalarTypeDef(scalar)) => {
         let at = source.at(scalar.position)
-        if !scalar.directives.is_empty() {
-          raise Unsupported(
-            at, "scalar directives are outside the output profile",
-          )
-        }
+        let specification = scalar_specification(source, scalar.directives)
         if builtin(scalar.name) ||
           scalar.name.has_prefix("__") ||
           objects.contains(scalar.name) ||
           enums.contains(scalar.name) ||
-          !scalars.add_and_check(scalar.name) {
+          scalars.contains(scalar.name) {
           raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
         }
+        scalars[scalar.name] = specification
       }
       TypeDef(EnumTypeDef(enum_type)) => {
         let at = source.at(enum_type.position)
@@ -273,7 +293,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       }
     }
   }
-  { root, objects, enums, }
+  { root, objects, enums, scalars, }
 }
 
 ///|
@@ -295,7 +315,12 @@ fn Schema::type_text(self : Schema, kind : @gql.GqlType) -> String {
     NamedType(name) =>
       match self.enums.get(name) {
         Some(values) => name + "{" + values + "}"
-        None => name
+        None =>
+          match self.scalars.get(name) {
+            Some(Some(url)) =>
+              name + "@specifiedBy(" + Json::string(url).stringify() + ")"
+            _ => name
+          }
       }
     ListType(item) => "[\{self.type_text(item)}]"
     NonNullType(inner) => "\{self.type_text(inner)}!"

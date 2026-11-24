@@ -461,3 +461,38 @@ test "enum extensions resolve forward declarations and detect hidden output grow
     assert_true(result is Err(@moongqlimpact.Invalid(_, _)))
   }
 }
+
+///|
+test "custom scalar specification changes preserve URLs and locate consumers" {
+  let old = source(
+    "old", "scalar Date @specifiedBy(url: \"https://example.test/date/v1\") type Query { dates: [Date!]! }",
+  )
+  let query = source("query", "query Read { dates }")
+  let clients = [@moongqlimpact.Client::{ name: "web", sources: [query], }]
+  assert_true(
+    @moongqlimpact.analyze_upgrade(old, old, clients).changes.is_empty(),
+  )
+  for
+    declaration in [
+      "scalar Date", "scalar Date @specifiedBy(url: \"https://example.test/date/v2\")",
+    ] {
+    let next = source("next", declaration + " type Query { dates: [Date!]! }")
+    let report = @moongqlimpact.analyze_upgrade(old, next, clients)
+    assert_eq(report.changes.length(), 1)
+    assert_true(
+      report.changes[0].previous_type.contains("https://example.test/date/v1"),
+    )
+    assert_eq(report.changes[0].impacts[0].response_path, ["dates"])
+    let decoded : @moongqlimpact.Report = @json.from_json(
+      @json.parse(report.to_json().stringify()),
+    )
+    assert_eq(decoded, report)
+  }
+  let invalid = source(
+    "bad", "scalar Date @specifiedBy(url: 2) type Query { dates: Date }",
+  )
+  let result = Ok(@moongqlimpact.analyze_upgrade(old, invalid, clients)) catch {
+    error => Err(error)
+  }
+  assert_true(result is Err(@moongqlimpact.Invalid(_, _)))
+}
