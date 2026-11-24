@@ -23,6 +23,8 @@ For an initial rollout without a client catalog, run `moon run cmd/check --targe
 
 Run `moon run cmd/check --target native -- --help` to see the accepted command forms and exit codes.
 
+Place `--markdown` before the policy flag to produce a readable report for a CI job summary. For example, run `moon run cmd/check --target native -- --markdown --schema-only examples/apollo/old.graphql examples/apollo/new.graphql`. Its exit status follows the selected policy, and the report includes every change.
+
 ## Where to use it
 
 - **Server release gate.** Export the current and proposed SDL in a pull request. Check them with queries from the web and mobile clients. Use the reported locations to restore the old field contract or coordinate a client release.

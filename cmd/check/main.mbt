@@ -13,9 +13,9 @@ fn read_source(path : String) -> @impact.Source raise {
 
 ///|
 fn usage() -> Unit {
-  println("Usage: check --schema-only OLD.graphql NEW.graphql")
+  println("Usage: check [--markdown] --schema-only OLD.graphql NEW.graphql")
   println(
-    "Usage: check [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
+    "Usage: check [--markdown] [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
   )
   println(
     "Exit status: 0 passes the selected policy, 1 blocks the upgrade, 2 indicates an input error.",
@@ -28,9 +28,11 @@ fn run(args : Array[String]) -> Int32 raise {
     usage()
     return 0
   }
-  let observed_only = args.get(1) == Some("--observed-only")
-  let schema_only = args.get(1) == Some("--schema-only")
-  let first = if observed_only || schema_only { 2 } else { 1 }
+  let markdown = args.get(1) == Some("--markdown")
+  let option_index = if markdown { 2 } else { 1 }
+  let observed_only = args.get(option_index) == Some("--observed-only")
+  let schema_only = args.get(option_index) == Some("--schema-only")
+  let first = option_index + (if observed_only || schema_only { 1 } else { 0 })
   let input_count = args.length() - first
   let valid = if schema_only {
     input_count == 2
@@ -56,7 +58,11 @@ fn run(args : Array[String]) -> Int32 raise {
     clients.push(@impact.Client::{ name, sources, })
   }
   let report = @impact.analyze_upgrade(baseline, proposed, clients)
-  println(report.to_json().stringify())
+  if markdown {
+    println(report.to_markdown())
+  } else {
+    println(report.to_json().stringify())
+  }
   let blocks = if observed_only {
     report.changes.any(fn(change) { !change.impacts.is_empty() })
   } else {

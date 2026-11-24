@@ -67,6 +67,22 @@ async fn demo() -> Unit {
     [..prefix, "--schema-only", old, old],
   ).output()
   schema_clean.check()
+  for policy in [[], ["--observed-only"]] {
+    let md = @shell.Cmd(
+      "moon",
+      [..prefix, "--markdown", ..policy, old, next, ..files],
+    ).output()
+    assert_eq(md.exit_code(), 1)
+    assert_true(md.stdout().contains("# GraphQL upgrade impact"))
+    assert_true(md.stdout().contains("flight-board"))
+    assert_true(md.stdout().contains("Mission.crew"))
+  }
+  let md_clean = @shell.Cmd(
+    "moon",
+    [..prefix, "--markdown", "--schema-only", old, old],
+  ).output()
+  md_clean.check()
+  assert_true(md_clean.stdout().contains("No output contract regressions"))
   let incomplete = @shell.Cmd("moon", [..prefix, old, next]).output()
   assert_eq(incomplete.exit_code(), 2)
   println("Apollo CLI demo passed (strict, observed-only, and schema-only policies)")
