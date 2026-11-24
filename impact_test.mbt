@@ -429,3 +429,35 @@ test "output enum changes retain client evidence and ignore declaration order" {
   }
   assert_true(rejected is Err(@moongqlimpact.Invalid(_, _)))
 }
+
+///|
+test "enum extensions resolve forward declarations and detect hidden output growth" {
+  let old = source("old", "enum State { READY } type Query { state: State }")
+  let next = source(
+    "next", "extend enum State { DONE @deprecated } enum State { READY } type Query { state: State }",
+  )
+  let report = @moongqlimpact.analyze_upgrade(old, next, [
+    @moongqlimpact.Client::{
+      name: "web",
+      sources: [source("query", "{ state }")],
+    },
+  ])
+  assert_eq(report.changes[0].proposed_type, Some("State{DONE, READY}"))
+  assert_eq(report.changes[0].impacts[0].response_path, ["state"])
+  let flat = source(
+    "flat", "enum State { READY DONE } type Query { state: State }",
+  )
+  assert_true(@moongqlimpact.analyze_upgrade(flat, next, []).changes.is_empty())
+  for
+    text in [
+      "enum State { READY } extend enum State { READY } type Query { state: State }",
+      "extend enum Missing { DONE } type Query { keep: String }",
+    ] {
+    let result = Ok(
+      @moongqlimpact.analyze_upgrade(old, source("bad", text), []),
+    ) catch {
+      error => Err(error)
+    }
+    assert_true(result is Err(@moongqlimpact.Invalid(_, _)))
+  }
+}

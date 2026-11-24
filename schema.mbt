@@ -98,6 +98,21 @@ fn index_fields(
 }
 
 ///|
+fn index_enum_values(
+  source : Source,
+  values : Set[String],
+  definitions : Array[@gql.EnumValue],
+) -> Unit raise AnalysisError {
+  for value in definitions {
+    let at = source.at(value.position)
+    if value.name.has_prefix("__") || !values.add_and_check(value.name) {
+      raise Invalid(at, "duplicate or reserved enum value: \{value.name}")
+    }
+    validate_deprecation(source, value.directives)
+  }
+}
+
+///|
 fn index(source : Source) -> Schema raise AnalysisError {
   let start = { path: source.path, line: 1, column: 1, }
   source.check_size()
@@ -107,6 +122,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
   let objects = Map([])
   let scalars = Set([])
   let enums = Map([])
+  let enum_values = Map([])
+  let enum_extensions = []
   let extensions = []
   let mut root = None
   for definition in doc.definitions {
@@ -157,22 +174,12 @@ fn index(source : Source) -> Schema raise AnalysisError {
           raise Invalid(at, "duplicate or reserved enum: \{name}")
         }
         let values = Set([])
-        for value in enum_type.values {
-          let at = source.at(value.position)
-          if value.name.has_prefix("__") || !values.add_and_check(value.name) {
-            raise Invalid(at, "duplicate or reserved enum value: \{value.name}")
-          }
-          validate_deprecation(source, value.directives)
-        }
+        index_enum_values(source, values, enum_type.values)
         if values.is_empty() {
           raise Invalid(at, "enum must define at least one value")
         }
-        let sorted = []
-        for value in values {
-          sorted.push(value)
-        }
-        sorted.sort()
-        enums[name] = sorted.join(", ")
+        enum_values[name] = values
+        enums[name] = ""
       }
       TypeDef(ObjectTypeDef(object)) => {
         let at = source.at(object.position)
@@ -197,11 +204,36 @@ fn index(source : Source) -> Schema raise AnalysisError {
         objects[object.name] = fields
       }
       TypeExt(ObjectTypeExt(extension)) => extensions.push(extension)
+      TypeExt(EnumTypeExt(extension)) => enum_extensions.push(extension)
       _ =>
         raise Unsupported(
           start, "only object definitions, object field extensions, scalar and enum definitions and a query root are supported",
         )
     }
+  }
+  for extension in enum_extensions {
+    let at = source.at(extension.position)
+    if !extension.directives.is_empty() {
+      raise Unsupported(at, "enum extensions may only add values")
+    }
+    guard enum_values.get(extension.name) is Some(values) else {
+      raise Invalid(
+        at,
+        "extension requires an existing enum: \{extension.name}",
+      )
+    }
+    if extension.values.is_empty() {
+      raise Invalid(at, "enum extension must add at least one value")
+    }
+    index_enum_values(source, values, extension.values)
+  }
+  for name, values in enum_values {
+    let sorted = []
+    for value in values {
+      sorted.push(value)
+    }
+    sorted.sort()
+    enums[name] = sorted.join(", ")
   }
   for extension in extensions {
     let at = source.at(extension.position)
