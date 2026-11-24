@@ -31,5 +31,6 @@ test {
   assert_eq(change.previous_type, "String!")
   assert_eq(change.proposed_type, Some("String"))
   assert_eq(change.impacts[0].response_path, ["heading"])
+  assert_true(report.to_markdown().contains("screen.graphql"))
 }
 ```

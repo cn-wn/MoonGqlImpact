@@ -496,3 +496,30 @@ test "custom scalar specification changes preserve URLs and locate consumers" {
   }
   assert_true(result is Err(@moongqlimpact.Invalid(_, _)))
 }
+
+///|
+test "Markdown preserves unobserved changes and escapes catalog labels" {
+  let old = source("old", "type Query { name: String! lost: String }")
+  let next = source("next", "type Query { name: String }")
+  let report = @moongqlimpact.analyze_upgrade(old, next, [
+    @moongqlimpact.Client::{
+      name: "<script>*web*</script>",
+      sources: [source("a\n## injected", "{ name }")],
+    },
+  ])
+  let markdown = report.to_markdown()
+  assert_true(markdown.contains("Query.name"))
+  assert_true(markdown.contains("Query.lost"))
+  assert_true(
+    markdown.contains("No registered operation observes this change."),
+  )
+  assert_true(markdown.contains("&lt;script&gt;&#42;web&#42;&lt;/script&gt;"))
+  assert_true(markdown.contains("a&#10;## injected:1:3"))
+  assert_false(markdown.contains("<script>"))
+  assert_eq(report.to_markdown(), markdown)
+  assert_true(
+    @moongqlimpact.analyze_upgrade(old, old, [])
+    .to_markdown()
+    .contains("No output contract regressions"),
+  )
+}
