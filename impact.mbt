@@ -123,15 +123,17 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
 ///|
 priv struct Walk {
   schema : Schema
+  proposed : Schema
+  argument_changes : Map[String, Array[ArgumentDiff]]
   catalog : Catalog
   changes : Map[String, Change]
   client : String
   operation : String
   seen_fragments : Set[String]
   active : Set[String]
-  response_fields : Map[String, String]
-  reported : Set[(String, String, Int32, Int32)]
-  variables : Map[String, Location]
+  response_fields : Map[String, (String, Map[String, @gql.Value])]
+  reported : Set[(String, String, String, Int32, Int32)]
+  variables : Map[String, @gql.VariableDefinition]
   used_variables : Set[String]
   mut budget : Int32
 }
@@ -158,8 +160,14 @@ fn Walk::validate_selection_directives(
     match directive.arguments {
       [("if", BooleanValue(_))] => ()
       [("if", Variable(variable))] => {
-        if !self.variables.contains(variable) {
+        guard self.variables.get(variable) is Some(definition) else {
           raise Invalid(at, "undefined condition variable \{variable}")
+        }
+        if !variable_fits(definition, NonNullType(NamedType("Boolean")), false) {
+          raise Invalid(
+            at,
+            "condition variable \{variable} must satisfy Boolean!",
+          )
         }
         self.used_variables.add(variable)
       }
@@ -195,22 +203,30 @@ fn Walk::visit(
     match selection {
       FieldSelection(field) => {
         let at = source.at(field.position)
-        if !field.arguments.is_empty() {
-          raise Unsupported(
-            at, "selection arguments are outside the output profile",
-          )
-        }
         self.validate_selection_directives(source, field.directives)
         let coordinate = "\{owner}.\{field.name}"
         let next_path = path.copy()
         next_path.push(field.field_alias.unwrap_or(field.name))
         let key = next_path.join(".")
-        if self.response_fields.get(key) is Some(previous) &&
-          previous != coordinate {
+        let arguments = Map([])
+        for (name, value) in field.arguments {
+          if arguments.contains(name) {
+            raise Invalid(at, "duplicate field argument \{name}")
+          }
+          arguments[name] = value
+        }
+        if self.response_fields.get(key) is Some((previous, previous_arguments)) &&
+          (
+            previous != coordinate ||
+            !same_arguments(previous_arguments, arguments)
+          ) {
           raise Invalid(at, "conflicting selections for response path \{key}")
         }
-        self.response_fields[key] = coordinate
+        self.response_fields[key] = (coordinate, arguments)
         if field.name == "__typename" {
+          if !arguments.is_empty() {
+            raise Invalid(at, "__typename takes no arguments")
+          }
           if !field.selection_set.items.is_empty() {
             raise Invalid(
               at, "__typename is a scalar and forbids a selection set",
@@ -221,6 +237,14 @@ fn Walk::visit(
         guard self.schema.objects[owner].get(field.name) is Some(old) else {
           raise Invalid(at, "baseline field does not exist: \{coordinate}")
         }
+        self.validate_arguments(old, arguments, at)
+        if self.argument_changes.get(coordinate) is Some(diffs) {
+          for diff in diffs {
+            if self.argument_affects_selection(diff, arguments.get(diff.name)) {
+              self.record_impact(diff.change, key, next_path, at)
+            }
+          }
+        }
         let child = named(old.kind)
         if self.schema.objects.contains(child) ==
           field.selection_set.items.is_empty() {
@@ -228,15 +252,8 @@ fn Walk::visit(
             at, "object fields require a selection set and scalar fields forbid it",
           )
         }
-        if self.changes.get(coordinate) is Some(change) &&
-          self.reported.add_and_check((key, at.path, at.line, at.column)) {
-          let impact = {
-            client: self.client,
-            operation: self.operation,
-            response_path: next_path,
-            selection: at,
-          }
-          change.impacts.push(impact)
+        if self.changes.get(coordinate) is Some(change) {
+          self.record_impact(change, key, next_path, at)
         }
         if !field.selection_set.items.is_empty() {
           self.visit(child, source, field.selection_set, next_path, depth + 1)
@@ -277,7 +294,7 @@ fn Walk::visit(
 }
 
 ///|
-/// Compare output contracts and locate affected selections in baseline-valid queries.
+/// Compare supported input and output contracts and locate affected selections in baseline-valid queries.
 pub fn analyze_upgrade(
   baseline : Source,
   proposed : Source,
@@ -292,12 +309,28 @@ pub fn analyze_upgrade(
     )
   }
   let changes = Map([])
+  let argument_changes = Map([])
   let ordered = []
   for owner, fields in old.objects {
     for name, field in fields {
       let candidate = match next.objects.get(owner) {
         Some(fields) => fields.get(name)
         None => None
+      }
+      if candidate is Some(new_field) {
+        let diffs = argument_diffs(
+          old,
+          next,
+          "\{owner}.\{name}",
+          field,
+          new_field,
+        )
+        if !diffs.is_empty() {
+          argument_changes["\{owner}.\{name}"] = diffs
+          for diff in diffs {
+            ordered.push(diff.change)
+          }
+        }
       }
       let base_name = named(field.kind)
       if candidate is Some(new_field) &&
@@ -338,24 +371,20 @@ pub fn analyze_upgrade(
         if variables.contains(definition.name) {
           raise Invalid(at, "duplicate variable: \{definition.name}")
         }
-        match (definition.var_type, definition.default_value) {
-          (NonNullType(NamedType("Boolean")), None | Some(BooleanValue(_)))
-          | (NamedType("Boolean"), Some(BooleanValue(_))) => ()
-          (NamedType("Boolean"), None | Some(NullValue)) =>
-            raise Unsupported(
-              at, "nullable condition variables require a boolean default",
-            )
-          (NamedType("Boolean") | NonNullType(NamedType("Boolean")), _) =>
-            raise Invalid(at, "condition variable default must be a boolean")
-          _ =>
-            raise Unsupported(
-              at, "only boolean condition variables are supported",
-            )
+        old.check_input_type(definition.var_type, at)
+        if definition.default_value is Some(value) &&
+          !old.value_fits(definition.var_type, value, Map([])) {
+          raise Invalid(
+            at,
+            "invalid default value for variable \{definition.name}",
+          )
         }
-        variables[definition.name] = at
+        variables[definition.name] = definition
       }
       let walk = {
         schema: old,
+        proposed: next,
+        argument_changes,
         catalog,
         changes,
         client: client.name,
@@ -369,9 +398,9 @@ pub fn analyze_upgrade(
         budget: 100000,
       }
       walk.visit(old.root, file, query.selection_set, [], 0)
-      for name, at in variables {
+      for name, definition in variables {
         if !walk.used_variables.contains(name) {
-          raise Invalid(at, "unused condition variable \{name}")
+          raise Invalid(file.at(definition.position), "unused variable \{name}")
         }
       }
     }

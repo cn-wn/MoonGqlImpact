@@ -1,12 +1,12 @@
 # MoonGqlImpact
 
-MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query output upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field or a weakened output type. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
+MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query contract upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field or a weakened output type. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
 
 See the [0.1.0 release notes](CHANGELOG.md) and the [checked library example](README.mbt.md).
 
 ## Try the Apollo 11 example
 
-Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261102), clone this repository, and run from its root:
+Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261119), clone this repository, and run from its root:
 
 ```sh
 moon update
@@ -24,6 +24,16 @@ For an initial rollout without a client catalog, run `moon run cmd/check --targe
 Run `moon run cmd/check --target native -- --help` to see the accepted command forms and exit codes.
 
 Place `--markdown` before the policy flag to produce a readable report for a CI job summary. For example, run `moon run cmd/check --target native -- --markdown --schema-only examples/apollo/old.graphql examples/apollo/new.graphql`. Its exit status follows the selected policy, and the report includes every change.
+
+## Check an argument upgrade
+
+The example changes `user(id: ID)` to `user(id: ID!)` with no change to the return type.
+
+```sh
+moon run cmd/check --target native -- --observed-only examples/arguments/old.graphql examples/arguments/new.graphql desktop examples/arguments/desktop.graphql mobile examples/arguments/mobile.graphql
+```
+
+The report identifies `Query.user(id:)`. The mobile operations `EditProfile` and `CurrentUser` are affected because one supplies a nullable variable and the other omits the argument. The desktop operation uses a non-null variable and can keep its query. Run with the desktop operation alone to pass `--observed-only` while still seeing the global change.
 
 ## Where to use it
 
@@ -45,10 +55,12 @@ Selections may use `@include(if: true)` or `@skip(if: false)` with either litera
 
 Output enums are checked by value set, including values added through `extend enum`. Extensions can precede the enum definition. Duplicate values and missing base enums are rejected. Adding or removing a value flags affected fields and registered queries. Additions can affect exhaustive client code, and removals change the documented result domain. Both are gated conservatively. Reports render enum domains as `Status{READY, WAITING}` inside their original list and nullability wrappers.
 
-The checker rejects field arguments and variables outside those condition directives, other directives, interfaces and unions, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field and enum value additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+Field arguments and variables support built-in scalars, enums, and nested lists. The checker reports removed arguments, new required arguments, type changes that can affect existing values, input enum narrowing, and changes in defaults on existing arguments. It validates baseline uses and attributes changes to the affected operation. Variables declared nullable can still carry an explicit null even if their default lets the query pass validation. Arguments appear as coordinates such as `Query.user(id:)` with their type and default in the existing JSON shape. Schema locations point to argument declarations, and operation locations point to the field selection. For a new required argument, the previous type is `<absent>` and the baseline location points to the field.
+
+The checker rejects input objects, custom scalar inputs, argument directives, interfaces and unions, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions other than object field and enum value additions. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and roadmap
 
 The [moonbit-community/graphql parser](https://github.com/moonbit-community/graphql.mbt) (Apache-2.0, 0.1.1) provides GraphQL syntax and positions. The output comparison and operation tracing are implemented here. The [GraphQL October 2021 specification](https://spec.graphql.org/October2021/) is the semantic reference. [NASA Apollo 11](https://www.nasa.gov/mission/apollo-11/) is the factual source for the launch date and crew names. The example schemas and queries are authored for this repository. The native CLI uses [moonbitlang/x](https://github.com/moonbitlang/x) (Apache-2.0). The [MoonBit async package](https://github.com/moonbitlang/async) (Apache-2.0) runs the end-to-end check with `moon run --deny-warn scripts/demo.mbtx`.
 
-Next capabilities are input compatibility, then abstract output impact. Project license is Apache-2.0.
+Next capabilities are input object compatibility and abstract output impact. Project license is Apache-2.0.

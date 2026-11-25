@@ -91,7 +91,7 @@ test "stronger output promises preserve behavior and malformed input does not po
 ///|
 test "unsupported inputs and invalid baseline selections are rejected" {
   let old = source("old", "type Query { data: String }")
-  let query = source("client", "query Read($id: ID) { data }")
+  let query = source("client", "query Read($id: Filter) { data }")
   let rejected = Ok(
     @moongqlimpact.analyze_upgrade(old, old, [
       @moongqlimpact.Client::{ name: "web", sources: [query], },
@@ -520,7 +520,7 @@ test "Markdown preserves unobserved changes and escapes catalog labels" {
   assert_true(
     @moongqlimpact.analyze_upgrade(old, old, [])
     .to_markdown()
-    .contains("No output contract regressions"),
+    .contains("No contract regressions"),
   )
 }
 

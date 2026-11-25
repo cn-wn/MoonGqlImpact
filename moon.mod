@@ -8,7 +8,7 @@ repository = "https://github.com/cn-wn/MoonGqlImpact"
 
 license = "Apache-2.0"
 
-description = "Trace GraphQL output compatibility regressions to client operations."
+description = "Trace GraphQL input and output compatibility regressions to client operations."
 
 import {
   "moonbit-community/graphql@0.1.1",

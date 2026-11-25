@@ -1,0 +1,11 @@
+query EditProfile($id: ID) {
+  profile: user(id: $id) {
+    name
+  }
+}
+
+query CurrentUser {
+  user {
+    name
+  }
+}

@@ -82,7 +82,7 @@ async fn demo() -> Unit {
     [..prefix, "--markdown", "--schema-only", old, old],
   ).output()
   md_clean.check()
-  assert_true(md_clean.stdout().contains("No output contract regressions"))
+  assert_true(md_clean.stdout().contains("No contract regressions"))
   let duplicate_source = @shell.Cmd(
     "moon",
     [..prefix, old, next, "names", "examples/apollo/mission-names.graphql",
@@ -96,6 +96,45 @@ async fn demo() -> Unit {
 }
 
 ///|
+async fn argument_demo() -> Unit {
+  let base = [
+    "run", "cmd/check", "--target", "native", "--", "--observed-only",
+    "examples/arguments/old.graphql", "examples/arguments/new.graphql",
+    "desktop", "examples/arguments/desktop.graphql",
+  ]
+  let safe = @shell.Cmd("moon", base).output()
+  safe.check()
+  guard @json.parse(safe.stdout()) is {
+    "changes": [{ "coordinate": "Query.user(id:)", "impacts": [], .. }], ..
+  } else {
+    fail("expected an unobserved argument regression: " + safe.stdout())
+  }
+  let affected = @shell.Cmd(
+    "moon",
+    [..base, "mobile", "examples/arguments/mobile.graphql"],
+  ).output()
+  assert_eq(affected.exit_code(), 1)
+  guard @json.parse(affected.stdout()) is {
+    "changes": [{
+      "coordinate": "Query.user(id:)",
+      "previous_type": "ID",
+      "proposed_type": "ID!",
+      "impacts": [
+        { "client": "mobile", "operation": "EditProfile", "response_path": ["profile"], .. },
+        { "client": "mobile", "operation": "CurrentUser", .. },
+      ],
+      ..
+    }], ..
+  } else {
+    fail("expected only mobile operations to be affected: " + affected.stdout())
+  }
+  println("Argument CLI demo passed (compatible, nullable, and omitted arguments)")
+}
+
+///|
 fn main {
-  @async.run_async_main(demo)
+  @async.run_async_main(async fn() {
+    demo()
+    argument_demo()
+  })
 }

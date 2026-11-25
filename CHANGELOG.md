@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Analyze field arguments and operation variables for built-in scalar, enum and list inputs. Reports trace input regressions and default changes to affected operations.
+
 - Include values from enum extensions and track custom scalar specification URL changes through client queries.
 - Generate escaped Markdown reports from the library and native CLI with `--markdown`.
 - Reject repeated or empty operation source paths within a client to preserve unambiguous impact evidence.

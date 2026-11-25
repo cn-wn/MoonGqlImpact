@@ -26,6 +26,7 @@ fn Source::at(self : Source, pos : @gql.Pos) -> Location {
 
 ///|
 priv struct IndexedField {
+  arguments : Map[String, Argument]
   kind : @gql.GqlType
   at : Location
 }
@@ -33,7 +34,7 @@ priv struct IndexedField {
 ///|
 priv struct Schema {
   root : String
-  enums : Map[String, String]
+  enums : Map[String, Array[String]]
   scalars : Map[String, String?]
   objects : Map[String, Map[String, IndexedField]]
 }
@@ -90,11 +91,25 @@ fn index_fields(
     if fields.contains(field.name) || field.name.has_prefix("__") {
       raise Invalid(at, "duplicate or reserved field: \{field.name}")
     }
-    if !field.arguments.is_empty() {
-      raise Unsupported(at, "schema arguments are outside the output profile")
+    let arguments = Map([])
+    for argument in field.arguments {
+      let at = source.at(argument.position)
+      if argument.name.has_prefix("__") || arguments.contains(argument.name) {
+        raise Invalid(at, "duplicate or reserved argument: \{argument.name}")
+      }
+      if !argument.directives.is_empty() {
+        raise Unsupported(
+          at, "argument directives are outside the input profile",
+        )
+      }
+      arguments[argument.name] = {
+        kind: argument.value_type,
+        default_value: argument.default_value,
+        at,
+      }
     }
     validate_deprecation(source, field.directives)
-    fields[field.name] = { kind: field.field_type, at, }
+    fields[field.name] = { kind: field.field_type, at, arguments, }
   }
 }
 
@@ -172,7 +187,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
         if builtin(scalar.name) ||
           scalar.name.has_prefix("__") ||
           objects.contains(scalar.name) ||
-          enums.contains(scalar.name) ||
+          enum_values.contains(scalar.name) ||
           scalars.contains(scalar.name) {
           raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
         }
@@ -188,7 +203,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
         }
         if builtin(name) ||
           name.has_prefix("__") ||
-          enums.contains(name) ||
+          enum_values.contains(name) ||
           scalars.contains(name) ||
           objects.contains(name) {
           raise Invalid(at, "duplicate or reserved enum: \{name}")
@@ -199,13 +214,12 @@ fn index(source : Source) -> Schema raise AnalysisError {
           raise Invalid(at, "enum must define at least one value")
         }
         enum_values[name] = values
-        enums[name] = ""
       }
       TypeDef(ObjectTypeDef(object)) => {
         let at = source.at(object.position)
         if objects.contains(object.name) ||
           scalars.contains(object.name) ||
-          enums.contains(object.name) ||
+          enum_values.contains(object.name) ||
           builtin(object.name) ||
           object.name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved object: \{object.name}")
@@ -253,7 +267,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       sorted.push(value)
     }
     sorted.sort()
-    enums[name] = sorted.join(", ")
+    enums[name] = sorted
   }
   for extension in extensions {
     let at = source.at(extension.position)
@@ -282,6 +296,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
   if !objects.contains(root) {
     raise Invalid(start, "query root object \{root} is missing")
   }
+  let schema = { root, objects, enums, scalars, }
+  let no_variables = Map([])
   for _, fields in objects {
     for _, field in fields {
       let name = named(field.kind)
@@ -291,9 +307,19 @@ fn index(source : Source) -> Schema raise AnalysisError {
         !enums.contains(name) {
         raise Invalid(field.at, "undefined output type: \{name}")
       }
+      for name, argument in field.arguments {
+        schema.check_input_type(argument.kind, argument.at)
+        if argument.default_value is Some(value) &&
+          !schema.value_fits(argument.kind, value, no_variables) {
+          raise Invalid(
+            argument.at,
+            "invalid default value for argument \{name}",
+          )
+        }
+      }
     }
   }
-  { root, objects, enums, scalars, }
+  schema
 }
 
 ///|
@@ -314,7 +340,7 @@ fn Schema::type_text(self : Schema, kind : @gql.GqlType) -> String {
   match kind {
     NamedType(name) =>
       match self.enums.get(name) {
-        Some(values) => name + "{" + values + "}"
+        Some(values) => name + "{" + values.join(", ") + "}"
         None =>
           match self.scalars.get(name) {
             Some(Some(url)) =>

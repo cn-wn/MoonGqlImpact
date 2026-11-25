@@ -28,7 +28,7 @@ fn Location::report_text(self : Location) -> String {
 pub fn Report::to_markdown(self : Report) -> String {
   let lines = ["# GraphQL upgrade impact", ""]
   if self.changes.is_empty() {
-    lines.push("No output contract regressions in the supported profile.")
+    lines.push("No contract regressions in the supported profile.")
   }
   for change in self.changes {
     lines.push("## <code>" + report_text(change.coordinate) + "</code>")
@@ -39,7 +39,12 @@ pub fn Report::to_markdown(self : Report) -> String {
     match change.proposed_type {
       Some(kind) =>
         lines.push("- Proposed type <code>" + report_text(kind) + "</code>")
-      None => lines.push("- Field removed")
+      None =>
+        if change.coordinate.has_suffix(":)") {
+          lines.push("- Argument removed")
+        } else {
+          lines.push("- Field removed")
+        }
     }
     lines.push("- Baseline <code>" + change.baseline.report_text() + "</code>")
     if change.proposed is Some(at) {
