@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Compare offline variable samples between snapshots and support explicit input rules for custom scalars.
 - Analyze query and mutation operations together, including changed write inputs and mutation-root removal.
 - Validate registered queries against both snapshots and report changes from new argument and input field defaults.
 - Version the CLI JSON report and record the analyzed client, source, and operation coverage.

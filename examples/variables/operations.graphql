@@ -1,0 +1,2 @@
+query Search($filter: SearchFilter!) { books(filter: $filter) }
+query Ping { ping }

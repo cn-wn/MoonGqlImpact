@@ -1,0 +1,4 @@
+[
+  {"client":"web","operation":"Runtime","id":"null-status","variables":{"filter":{"rules":[{"status":null}]}}},
+  {"client":"web","operation":"Runtime","id":"ready","variables":{"filter":{"rules":{"status":"READY"}}}}
+]

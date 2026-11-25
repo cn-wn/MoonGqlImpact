@@ -11,6 +11,8 @@ pub fn analyze_upgrade(Source, Source, Array[Client]) -> Report raise AnalysisEr
 
 pub fn analyze_upgrade_with_coverage(Source, Source, Array[Client]) -> AnalyzedUpgrade raise AnalysisError
 
+pub fn analyze_upgrade_with_samples(Source, Source, Array[Client], Array[VariableSample], scalar_inputs? : Map[String, (@json.Json) -> Bool]) -> AnalyzedUpgrade raise AnalysisError
+
 // Errors
 pub(all) suberror AnalysisError {
   Invalid(Location, String)
@@ -23,6 +25,7 @@ pub struct AnalyzedUpgrade {
   report : Report
   coverage : Array[ClientCoverage]
   proposed_rejections : Array[OperationRejection]?
+  sample_assessments : Array[SampleAssessment]
 }
 pub fn AnalyzedUpgrade::blocks(Self, observed_only? : Bool, severities? : Array[Severity], reason_codes? : Array[ReasonCode]) -> Bool
 pub fn AnalyzedUpgrade::equal(Self, Self) -> Bool
@@ -153,6 +156,8 @@ pub(all) enum ReasonCode {
   InputVariableValueMayBreak
   ProposedOperationRejected
   MutationRootRemoved
+  VariableSampleRejected
+  VariableSampleCoercionChanged
 }
 pub fn ReasonCode::equal(Self, Self) -> Bool
 pub fn ReasonCode::not_equal(Self, Self) -> Bool
@@ -171,6 +176,25 @@ pub fn Report::to_markdown(Self) -> String
 pub fn Report::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
+pub struct SampleAssessment {
+  client : String
+  operation : String
+  id : String
+  status : SampleStatus
+  path : String?
+  diagnostic : String?
+  reason : ChangeReason?
+}
+
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
+pub(all) enum SampleStatus {
+  Unchanged
+  CoercionChanged
+  VariableRejected
+  OperationRejected
+}
+
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) enum Severity {
   Breaking
   Risk
@@ -183,6 +207,13 @@ pub fn Severity::to_repr(Self) -> @debug.Repr
 pub(all) struct Source {
   path : String
   text : String
+}
+
+pub(all) struct VariableSample {
+  client : String
+  operation : String
+  id : String
+  variables : @json.Json
 }
 
 // Type aliases

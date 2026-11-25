@@ -1,0 +1,10 @@
+scalar DateTime
+scalar Decimal
+enum Status { READY WAITING }
+input SearchFilter {
+  since: DateTime
+  budget: Decimal
+  status: Status!
+  maxCount: Int = 5
+}
+type Query { books(filter: SearchFilter!): String ping: String }

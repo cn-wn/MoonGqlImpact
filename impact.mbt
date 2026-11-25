@@ -515,14 +515,62 @@ pub fn analyze_upgrade_with_coverage(
 }
 
 ///|
+/// Validate both snapshots and compare coercion of baseline-valid JSON variable samples.
+/// A scalar rule defines the supported JSON representation for a declared custom scalar.
+pub fn analyze_upgrade_with_samples(
+  baseline : Source,
+  proposed : Source,
+  clients : Array[Client],
+  samples : Array[VariableSample],
+  scalar_inputs~ : Map[String, (Json) -> Bool] = Map([]),
+) -> AnalyzedUpgrade raise AnalysisError {
+  analyze(
+    baseline,
+    proposed,
+    clients,
+    validate_proposed=true,
+    samples~,
+    scalar_inputs~,
+  )
+}
+
+///|
 fn analyze(
   baseline : Source,
   proposed : Source,
   clients : Array[Client],
   validate_proposed~ : Bool,
+  samples~ : Array[VariableSample] = [],
+  scalar_inputs~ : Map[String, (Json) -> Bool] = Map([]),
 ) -> AnalyzedUpgrade raise AnalysisError {
-  let old = index(baseline)
-  let next = index(proposed)
+  let old = index(baseline, scalar_inputs)
+  let next = index(proposed, scalar_inputs)
+  let start : Location = { path: baseline.path, line: 1, column: 1, }
+  for name, _ in scalar_inputs {
+    if !old.scalars.contains(name) && !next.scalars.contains(name) {
+      raise Invalid(start, "input rule requires a declared scalar: \{name}")
+    }
+  }
+  if samples.length() > 4096 {
+    raise Unsupported(start, "variable catalog exceeds 4096 samples")
+  }
+  let samples_by_operation : Map[(String, String), Array[VariableSample]] = Map([],
+  )
+  let sample_keys = Set([])
+  let sample_results = Map([])
+  for sample in samples {
+    if sample.id.trim().is_empty() ||
+      !sample_keys.add_and_check((sample.client, sample.operation, sample.id)) {
+      raise Invalid(
+        start, "sample IDs must be nonempty and unique within each client operation",
+      )
+    }
+    let key = (sample.client, sample.operation)
+    match samples_by_operation.get(key) {
+      Some(values) => values.push(sample)
+      None => samples_by_operation[key] = [sample]
+    }
+  }
   if old.root != next.root {
     raise Unsupported(
       { path: proposed.path, line: 1, column: 1, },
@@ -638,6 +686,7 @@ fn analyze(
           MutationRootRemoved,
         ])
       }
+      let mut operation_rejected = false
       if validate_proposed {
         let check = Walk::new(
           next,
@@ -649,7 +698,8 @@ fn analyze(
           operation~,
         )
         check.validate_operation(file, query, validate_proposed=true) catch {
-          Invalid(location, message) =>
+          Invalid(location, message) => {
+            operation_rejected = true
             proposed_rejections.push({
               client: client.name,
               operation,
@@ -657,7 +707,21 @@ fn analyze(
               message,
               reason: ProposedOperationRejected.reason(),
             })
+          }
           error => raise error
+        }
+      }
+      if samples_by_operation.get((client.name, operation)) is Some(selected) {
+        for sample in selected {
+          let key = (client.name, operation, sample.id)
+          sample_results[key] = assess_sample(
+            sample,
+            old,
+            next,
+            walk.variables,
+            file.at(query.position),
+            operation_rejected,
+          )
         }
       }
       analyzed_operations.push({
@@ -676,8 +740,19 @@ fn analyze(
       operations: analyzed_operations,
     })
   }
+  let sample_assessments = samples.map(sample => {
+    guard sample_results.get((sample.client, sample.operation, sample.id))
+      is Some(assessment) else {
+      raise Invalid(
+        start,
+        "sample \{sample.id} names an unregistered client or operation",
+      )
+    }
+    assessment
+  })
   {
     report: { changes: ordered, },
+    sample_assessments,
     coverage,
     proposed_rejections: if validate_proposed {
       Some(proposed_rejections)

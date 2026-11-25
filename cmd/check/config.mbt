@@ -5,6 +5,8 @@ priv struct CheckInput {
   clients : Array[@impact.Client]
   observed_only : Bool
   gate : Gate?
+  samples : Array[@impact.VariableSample]
+  scalar_inputs : Map[String, (Json) -> Bool]
 }
 
 ///|
@@ -195,7 +197,7 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
     error => raise config_error(path, "invalid JSON: \{error}")
   }
   let fields = config_object(json, path, "config", [
-    "baseline", "proposed", "clients", "policy",
+    "baseline", "proposed", "clients", "policy", "variable_samples", "scalar_inputs",
   ])
   guard fields.get("baseline") is Some(String(baseline)) &&
     fields.get("proposed") is Some(String(proposed)) else {
@@ -236,5 +238,7 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
     clients: config_clients(fields.get("clients"), path, root),
     observed_only,
     gate,
+    samples: read_variable_samples(fields.get("variable_samples"), path, root),
+    scalar_inputs: config_scalar_rules(fields.get("scalar_inputs"), path),
   }
 }

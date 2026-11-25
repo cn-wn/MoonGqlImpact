@@ -38,6 +38,7 @@ priv struct Schema {
   input_objects : Map[String, InputObject]
   enums : Map[String, Array[String]]
   scalars : Map[String, String?]
+  scalar_inputs : Map[String, (Json) -> Bool]
   fields : Map[String, Map[String, IndexedField]]
   parents : Map[String, Set[String]]
   interfaces : Map[String, Location]
@@ -157,7 +158,10 @@ fn scalar_specification(
 }
 
 ///|
-fn index(source : Source) -> Schema raise AnalysisError {
+fn index(
+  source : Source,
+  scalar_inputs : Map[String, (Json) -> Bool],
+) -> Schema raise AnalysisError {
   let start = { path: source.path, line: 1, column: 1, }
   source.check_size()
   let doc = @gql.parse_schema(source.text) catch {
@@ -469,6 +473,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
     possible,
     enums,
     scalars,
+    scalar_inputs,
   }
   let no_variables = Map([])
   for _, fields in fields_by_type {

@@ -14,7 +14,8 @@ fn Argument::required(self : Argument) -> Bool {
 fn Schema::is_input_type(self : Schema, name : String) -> Bool {
   builtin(name) ||
   self.enums.contains(name) ||
-  self.input_objects.contains(name)
+  self.input_objects.contains(name) ||
+  (self.scalars.contains(name) && self.scalar_inputs.contains(name))
 }
 
 ///|
@@ -27,7 +28,7 @@ fn Schema::check_input_type(
   if !self.is_input_type(name) {
     raise Unsupported(
       at,
-      "unsupported input type: \{name}; use built-in scalars, enums, lists or input objects",
+      "unsupported input type: \{name}; register an explicit rule for custom scalar inputs or use built-in input types",
     )
   }
 }
@@ -83,7 +84,15 @@ fn Schema::value_fits(
           items.all(item => self.value_fits(inner, item, variables))
         _ => self.value_fits(inner, value, variables)
       }
-    NamedType(name) =>
+    NamedType(name) => {
+      if self.scalar_inputs.get(name) is Some(accepts) {
+        return match value {
+          IntValue(_) | StringValue(_) | BooleanValue(_) =>
+            accepts(literal_json(value))
+          FloatValue(n) => n.is_finite() && accepts(literal_json(value))
+          _ => false
+        }
+      }
       match value {
         IntValue(number) =>
           name == "Float" ||
@@ -108,6 +117,7 @@ fn Schema::value_fits(
           }
         _ => false
       }
+    }
     NonNullType(_) => false
   }
 }

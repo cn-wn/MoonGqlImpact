@@ -111,6 +111,8 @@ fn run(args : Array[String]) -> Int32 raise {
       proposed,
       clients,
       observed_only,
+      samples: [],
+      scalar_inputs: Map([]),
       gate: if filtered {
         Some(gate)
       } else {
@@ -153,9 +155,21 @@ fn execute(
   input : CheckInput,
   markdown : Bool,
 ) -> Int32 raise @impact.AnalysisError {
-  let { baseline, proposed, clients, observed_only, gate, } = input
-  let analysis = @impact.analyze_upgrade_with_coverage(
-    baseline, proposed, clients,
+  let {
+    baseline,
+    proposed,
+    clients,
+    observed_only,
+    gate,
+    samples,
+    scalar_inputs,
+  } = input
+  let analysis = @impact.analyze_upgrade_with_samples(
+    baseline,
+    proposed,
+    clients,
+    samples,
+    scalar_inputs~,
   )
   if markdown {
     println(analysis.to_markdown())

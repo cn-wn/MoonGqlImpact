@@ -1,0 +1,8 @@
+{
+  "baseline": "old.graphql",
+  "proposed": "new.graphql",
+  "clients": [{"name": "web", "queries": ["operations.graphql"]}],
+  "policy": {"observed_only": true, "fail_on": ["VariableSampleRejected"]},
+  "variable_samples": "samples.json",
+  "scalar_inputs": {"DateTime": "string", "Decimal": "decimal-string"}
+}

@@ -43,8 +43,8 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 | Level | Reason codes |
 | --- | --- |
-| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected`, `MutationRootRemoved` |
-| `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded` |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected`, `MutationRootRemoved`, `VariableSampleRejected` |
+| `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded`, `VariableSampleCoercionChanged` |
 | `notice` | `ScalarSpecificationChanged` |
 
 `FieldRemoved` describes a selection that fails validation. `OutputNullabilityWeakened` describes a weaker response guarantee, even when the query remains valid. An enum addition can affect consumers that handle every known value explicitly. A scalar specification URL change records a change in the declaration.
@@ -70,6 +70,12 @@ The [mixed read/write example](examples/mutations/README.md) traces a breaking i
 ## Try a public schema
 
 The [SWAPI case](examples/swapi/README.md) uses the complete upstream Schema and two original example queries at a pinned revision. It verifies a still-compatible query, an affected interface fragment, and a diagnostic for an unsupported query.
+
+## Check offline variable samples
+
+Set `variable_samples` in the CI configuration to a relative JSON file. Each sample selects a registered client and operation. The analyzer reports values the proposed schema rejects and values that still coerce successfully with different defaults. The report records the sample identity and value path. See the [offline example](examples/variables/README.md).
+
+Custom scalar inputs require an explicit rule. Configuration accepts `string`, `boolean`, `number`, or `decimal-string` profiles in `scalar_inputs`, keyed by declared scalar name. Library callers can use `analyze_upgrade_with_samples` with deterministic validators. These rules check the caller-defined input representation for both snapshots.
 
 ## Where to use it
 
@@ -97,7 +103,7 @@ Input objects can use both input definitions and extensions. The checker validat
 
 Changes to an interface or union list its old and proposed concrete object types. An added concrete type is a risk for registered operations selecting that abstract result. For removals, evidence points to the fragment spread that loses a possible type. `FragmentNoLongerPossible` indicates that the fragment no longer matches at its site, including after narrowing by enclosing fragments. The checker validates interface inheritance and field signatures, union members, and response shape when aliases overlap. Extensions can add object or interface fields, implemented interfaces, union members, and enum values.
 
-The checker rejects custom scalar inputs, directives on input objects and input fields, argument directives, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects custom scalar inputs without an explicit rule, directives on input objects and input fields, argument directives, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and license
 

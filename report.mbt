@@ -26,22 +26,28 @@ fn Location::report_text(self : Location) -> String {
 /// Render every change and impact as an escaped, deterministic Markdown report.
 /// Ordering follows the report. Unobserved changes are included.
 pub fn Report::to_markdown(self : Report) -> String {
-  self.render_markdown([])
+  self.render_markdown([], [])
 }
 
 ///|
 /// Render the change report and any proposed-schema validation diagnostics.
 pub fn AnalyzedUpgrade::to_markdown(self : AnalyzedUpgrade) -> String {
-  self.report.render_markdown(self.proposed_rejections.unwrap_or([]))
+  self.report.render_markdown(
+    self.proposed_rejections.unwrap_or([]),
+    self.sample_assessments,
+  )
 }
 
 ///|
 fn Report::render_markdown(
   self : Report,
   rejections : Array[OperationRejection],
+  samples : Array[SampleAssessment],
 ) -> String {
   let lines = ["# GraphQL upgrade impact", ""]
-  if self.changes.is_empty() && rejections.is_empty() {
+  if self.changes.is_empty() &&
+    rejections.is_empty() &&
+    samples.all(sample => sample.reason is None) {
     lines.push("No contract regressions in the supported profile.")
   }
   for change in self.changes {
@@ -99,6 +105,25 @@ fn Report::render_markdown(
     for rejection in rejections {
       lines.push(
         "- <code>\{report_text(rejection.client)}</code> / <code>\{report_text(rejection.operation)}</code> at <code>\{rejection.location.report_text()}</code> — \{report_text(rejection.message)} (\{reason_label(rejection.reason)})",
+      )
+    }
+    lines.push("")
+  }
+  if !samples.is_empty() {
+    lines.push("## Variable samples")
+    lines.push("")
+    for sample in samples {
+      let path = sample.path
+        .map(value => " at <code>" + report_text(value) + "</code>")
+        .unwrap_or("")
+      let reason = sample.reason
+        .map(value => " (" + reason_label(value) + ")")
+        .unwrap_or("")
+      let diagnostic = sample.diagnostic
+        .map(value => " — " + report_text(value))
+        .unwrap_or("")
+      lines.push(
+        "- <code>\{report_text(sample.client)}</code> / <code>\{report_text(sample.operation)}</code> / <code>\{report_text(sample.id)}</code> \{json_label(ToJson::to_json(sample.status))}\{path}\{diagnostic}\{reason}",
       )
     }
     lines.push("")

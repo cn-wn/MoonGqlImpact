@@ -41,6 +41,8 @@ pub(all) enum ReasonCode {
   InputVariableValueMayBreak
   ProposedOperationRejected
   MutationRootRemoved
+  VariableSampleRejected
+  VariableSampleCoercionChanged
 }
 
 ///|
@@ -81,13 +83,15 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | InputFieldBecameRequired
     | InputFieldTypeChanged
     | ProposedOperationRejected
-    | MutationRootRemoved => Breaking
+    | MutationRootRemoved
+    | VariableSampleRejected => Breaking
     OutputEnumValueAdded
     | OutputEnumValueRemoved
     | ArgumentDefaultChanged
     | AbstractMemberAdded
     | InputFieldDefaultChanged
-    | InputVariableValueMayBreak => Risk
+    | InputVariableValueMayBreak
+    | VariableSampleCoercionChanged => Risk
     ScalarSpecificationChanged => Notice
   }
   { code: self, severity, }
@@ -182,13 +186,17 @@ pub fn AnalyzedUpgrade::blocks(
   severities? : Array[Severity],
   reason_codes? : Array[ReasonCode],
 ) -> Bool {
+  let accepts = fn(reason : ChangeReason) {
+    (severities is None && reason_codes is None) ||
+    severities.unwrap_or([]).contains(reason.severity) ||
+    reason_codes.unwrap_or([]).contains(reason.code)
+  }
   self.report.blocks(observed_only~, severities?, reason_codes?) ||
   (
     self.proposed_rejections is Some([_, ..]) &&
-    (
-      (severities is None && reason_codes is None) ||
-      severities.unwrap_or([]).contains(Breaking) ||
-      reason_codes.unwrap_or([]).contains(ProposedOperationRejected)
-    )
-  )
+    accepts(ProposedOperationRejected.reason())
+  ) ||
+  self.sample_assessments.any(sample => {
+    sample.reason is Some(reason) && accepts(reason)
+  })
 }

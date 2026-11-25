@@ -1,0 +1,5 @@
+[
+  {"client":"web","operation":"Search","id":"missing-status","variables":{"filter":{"since":"2026-01-01T00:00:00Z"}}},
+  {"client":"web","operation":"Search","id":"ready","variables":{"filter":{"status":"READY","budget":"12.50"}}},
+  {"client":"web","operation":"Ping","id":"health-check","variables":{}}
+]

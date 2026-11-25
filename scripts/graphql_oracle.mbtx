@@ -106,6 +106,19 @@ async fn verify(package_dir : String) -> Unit {
   }))
   let outputs : Array[Json] = @json.from_json(output_impacts)
   assert_true(outputs.any(hit => hit is { "operation": "Safe", .. }))
+  let samples = @shell.Cmd("moon", [
+    "run", "cmd/check", "--target", "native", "--", "--config", root + "check.json",
+  ]).output()
+  assert_eq(samples.exit_code(), 1)
+  guard @json.parse(samples.stdout()) is {
+    "sample_assessments": [
+      { "id": "null-status", "status": "VariableRejected", "path": "/filter/rules/0/status", .. },
+      { "id": "ready", "status": "CoercionChanged", "path": "/filter/maxCount", .. },
+    ],
+    ..
+  } else {
+    fail("MoonBit disagreed with the reference coercion results: " + samples.stdout())
+  }
   let rejected = @shell.Cmd("moon", [..prefix, old, next, "web", invalid_merge]).output()
   assert_eq(rejected.exit_code(), 2)
   assert_true(rejected.stdout().contains("conflicting selections"))

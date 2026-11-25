@@ -34,6 +34,7 @@ pub struct AnalyzedUpgrade {
   report : Report
   coverage : Array[ClientCoverage]
   proposed_rejections : Array[OperationRejection]?
+  sample_assessments : Array[SampleAssessment]
 }
 
 ///|
@@ -48,6 +49,9 @@ pub impl ToJson for AnalyzedUpgrade with fn to_json(self) {
   ])
   if self.proposed_rejections is Some(rejections) {
     fields["proposed_rejections"] = ToJson::to_json(rejections)
+  }
+  if !self.sample_assessments.is_empty() {
+    fields["sample_assessments"] = ToJson::to_json(self.sample_assessments)
   }
   Json::object(fields)
 }
@@ -76,7 +80,13 @@ pub impl @json.FromJson for AnalyzedUpgrade with fn from_json(value, context) {
   } else {
     None
   }
-  { report, coverage, proposed_rejections, }
+  let sample_assessments : Array[SampleAssessment] = if value
+    is { "sample_assessments": assessments, .. } {
+    @json.from_json(assessments, path=context.add_key("sample_assessments"))
+  } else {
+    []
+  }
+  { report, coverage, proposed_rejections, sample_assessments, }
 }
 
 ///|
