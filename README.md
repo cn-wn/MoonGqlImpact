@@ -25,6 +25,18 @@ Run `moon run cmd/check --target native -- --help` to see the accepted command f
 
 Place `--markdown` before the schema paths to produce a readable report for a CI job summary. For example, run `moon run cmd/check --target native -- --markdown --schema-only examples/apollo/old.graphql examples/apollo/new.graphql`. Its exit status follows the selected policy, and the report includes every change.
 
+## Register clients in a CI configuration
+
+Put schema paths, client query files, and the gate policy in a JSON file such as the [Apollo example](examples/apollo/check.json).
+
+~~~sh
+moon run cmd/check --target native -- --config examples/apollo/check.json
+~~~
+
+The configuration requires `baseline` and `proposed` file paths and a nonempty `clients` array. Each client has a unique `name` and a nonempty `queries` array. `policy` is optional. It accepts `observed_only` (boolean, default false) and `fail_on` (a nonempty array of gate levels and reason codes, default all findings). The example exits **1** because registered operations depend on changed fields.
+
+Paths in the file are relative to the configuration directory. Use `/` separators and include fragment files in the same client as their queries. A query entry may use one `*` in the final filename, for example `web/flight-*.graphql`. The pattern matches regular files in that directory, in sorted order. Every literal path must name an existing file and every pattern must match. Unknown keys, duplicate client names, and repeated files within a client (including overlapping patterns) are input errors with exit **2**. A query file may appear under different clients. Use `--markdown` with `--config` to render the report. The JSON policy supplies the gate options in configuration mode.
+
 ## Choose what blocks CI
 
 Use `--fail-on=breaking` to block on query or contract incompatibilities while keeping other findings in the report. The option accepts a comma-separated list of levels and exact reason codes, such as `--fail-on=breaking,OutputEnumValueAdded`. Supply options before the schema paths.

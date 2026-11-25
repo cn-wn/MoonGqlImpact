@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Load client catalogs and gate policy from a checked-in JSON configuration.
 - Analyze nested input objects and extensions, with field-level evidence for validation failures, runtime variable risks, and changed defaults.
 - Cross-check nested coercion, alias merging, and fragment validity with GraphQL.js 16.11.0 in CI.
 

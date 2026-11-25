@@ -35,6 +35,16 @@ async fn demo() -> Unit {
   ], .. } else {
     fail("unexpected Apollo upgrade report: " + changed.stdout())
   }
+  let config_args = [..prefix, "--config", "examples/apollo/check.json"]
+  let configured = @shell.Cmd("moon", config_args).output()
+  assert_eq(configured.exit_code(), 1)
+  assert_eq(@json.parse(configured.stdout()), report)
+  let config_markdown = @shell.Cmd("moon", [..config_args, "--markdown"]).output()
+  assert_eq(config_markdown.exit_code(), 1)
+  assert_true(config_markdown.stdout().contains("Mission.launchDate"))
+  let conflicting = @shell.Cmd("moon", [..config_args, "--observed-only"]).output()
+  assert_eq(conflicting.exit_code(), 2)
+  assert_true(conflicting.stdout().contains("--config cannot be combined"))
   let invalid = @shell.Cmd(
     "moon",
     [..prefix, old, next, "web", "examples/apollo/launch-date.graphql"],

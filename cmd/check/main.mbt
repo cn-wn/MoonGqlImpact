@@ -13,6 +13,7 @@ fn read_source(path : String) -> @impact.Source raise {
 
 ///|
 fn usage() -> Unit {
+  println("Usage: check [--markdown] --config FILE.json")
   println(
     "Usage: check [--markdown] [--fail-on=LEVEL_OR_REASON,...] --schema-only OLD.graphql NEW.graphql",
   )
@@ -37,8 +38,8 @@ fn run(args : Array[String]) -> Int32 raise {
   let mut observed_only = false
   let mut schema_only = false
   let mut filtered = false
-  let severities : Array[@impact.Severity] = []
-  let reason_codes : Array[@impact.ReasonCode] = []
+  let gate = Gate::new()
+  let mut config_path = None
   let mut first = 1
   while args.get(first) is Some(option) && option.has_prefix("--") {
     first += 1
@@ -48,24 +49,20 @@ fn run(args : Array[String]) -> Int32 raise {
       "--observed-only" if !observed_only && !schema_only =>
         observed_only = true
       "--schema-only" if !observed_only && !schema_only => schema_only = true
+      "--config" if config_path is None => {
+        guard args.get(first) is Some(path) && !path.has_prefix("--") else {
+          println("--config requires a JSON file path")
+          return 2
+        }
+        config_path = Some(path)
+        first += 1
+      }
       _ if option.has_prefix("--fail-on=") && !filtered => {
         filtered = true
         for item in option[10:].split(",") {
-          match item {
-            "breaking" => severities.push(Breaking)
-            "risk" => severities.push(Risk)
-            "notice" => severities.push(Notice)
-            _ => {
-              let code : @impact.ReasonCode = @json.from_json(
-                Json::string(item.to_owned()),
-              ) catch {
-                _ => {
-                  println("Unknown gate category \{item}")
-                  return 2
-                }
-              }
-              reason_codes.push(code)
-            }
+          if !gate.add_category(item.to_owned()) {
+            println("Unknown gate category \{item}")
+            return 2
           }
         }
       }
@@ -76,6 +73,15 @@ fn run(args : Array[String]) -> Int32 raise {
     }
   }
   let input_count = args.length() - first
+  if config_path is Some(path) {
+    if observed_only || schema_only || filtered || input_count != 0 {
+      println(
+        "--config cannot be combined with positional inputs or gate options",
+      )
+      return 2
+    }
+    return execute(read_config(read_source(path)), markdown)
+  }
   let valid = if schema_only {
     input_count == 2
   } else {
@@ -99,21 +105,74 @@ fn run(args : Array[String]) -> Int32 raise {
   for name, sources in groups {
     clients.push(@impact.Client::{ name, sources, })
   }
+  execute(
+    {
+      baseline,
+      proposed,
+      clients,
+      observed_only,
+      gate: if filtered {
+        Some(gate)
+      } else {
+        None
+      },
+    },
+    markdown,
+  )
+}
+
+///|
+priv struct Gate {
+  severities : Array[@impact.Severity]
+  reason_codes : Array[@impact.ReasonCode]
+}
+
+///|
+fn Gate::new() -> Gate {
+  { severities: [], reason_codes: [], }
+}
+
+///|
+fn Gate::add_category(self : Gate, item : String) -> Bool {
+  match item {
+    "breaking" => self.severities.push(Breaking)
+    "risk" => self.severities.push(Risk)
+    "notice" => self.severities.push(Notice)
+    _ => {
+      let code : @impact.ReasonCode = @json.from_json(Json::string(item)) catch {
+        _ => return false
+      }
+      self.reason_codes.push(code)
+    }
+  }
+  true
+}
+
+///|
+fn execute(
+  input : CheckInput,
+  markdown : Bool,
+) -> Int32 raise @impact.AnalysisError {
+  let { baseline, proposed, clients, observed_only, gate, } = input
   let report = @impact.analyze_upgrade(baseline, proposed, clients)
   if markdown {
     println(report.to_markdown())
   } else {
     println(report.to_json().stringify())
   }
-  let blocks = if filtered {
-    report.blocks(observed_only~, severities~, reason_codes~)
-  } else {
-    report.blocks(observed_only~)
+  let blocks = match gate {
+    Some(gate) =>
+      report.blocks(
+        observed_only~,
+        severities=gate.severities,
+        reason_codes=gate.reason_codes,
+      )
+    None => report.blocks(observed_only~)
   }
-  if !blocks {
-    0
-  } else {
+  if blocks {
     1
+  } else {
+    0
   }
 }
 

@@ -1,0 +1,12 @@
+{
+  "baseline": "old.graphql",
+  "proposed": "new.graphql",
+  "clients": [
+    { "name": "flight-board", "queries": ["flight-*.graphql", "launch-date.graphql"] },
+    { "name": "crew-roster", "queries": ["crew-roster.graphql"] }
+  ],
+  "policy": {
+    "observed_only": true,
+    "fail_on": ["breaking"]
+  }
+}
