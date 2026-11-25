@@ -35,7 +35,7 @@ moon run cmd/check --target native -- --config examples/apollo/check.json
 
 The configuration requires `baseline` and `proposed` file paths and a nonempty `clients` array. Each client has a unique `name` and a nonempty `queries` array. `policy` is optional. It accepts `observed_only` (boolean, default false) and `fail_on` (a nonempty array of gate levels and reason codes, default all findings). The example exits **1** because registered operations depend on changed fields.
 
-Paths in the file are relative to the configuration directory. Use `/` separators and include fragment files in the same client as their queries. A query entry may use one `*` in the final filename, for example `web/flight-*.graphql`. The pattern matches regular files in that directory, in sorted order. Every literal path must name an existing file and every pattern must match. Unknown keys, duplicate client names, and repeated files within a client (including overlapping patterns) are input errors with exit **2**. A query file may appear under different clients. Use `--markdown` with `--config` to render the report. The JSON policy supplies the gate options in configuration mode.
+Paths in the file are relative to the configuration directory and omit dot and parent components. Use `/` separators and include fragment files in the same client as their queries. A query entry may use one `*` in the final filename, for example `web/flight-*.graphql`. The pattern matches regular files in that directory, in sorted order. Every literal path must name an existing file and every pattern must match. Unknown keys, duplicate client names, and repeated files within a client (including overlapping patterns) are input errors with exit **2**. A query file may appear under different clients. Use `--markdown` with `--config` to render the report. The JSON policy supplies the gate options in configuration mode.
 
 ## Choose what blocks CI
 
@@ -50,6 +50,8 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 `FieldRemoved` describes a selection that fails validation. `OutputNullabilityWeakened` describes a weaker response guarantee, even when the query remains valid. An enum addition can affect consumers that handle every known value explicitly. A scalar specification URL change records a change in the declaration.
 
 Without a filter, the gate considers every reported change. With `--observed-only`, a selected reason must apply to at least one registered selection. An invalid category or input returns **2**. JSON includes `reasons` with a code and severity for each change, plus `reason_codes` for each impact. Markdown displays the same breakdown. Library callers can use `Report::blocks` with severity or reason-code filters. Older reports without reason metadata remain readable and are treated conservatively by the gate.
+
+CLI JSON includes a format version and lists the client operations actually analyzed, including operations with no findings. See the [JSON report contract](docs/report-format.md) for coverage semantics and reason-code compatibility.
 
 ## Check an argument upgrade
 

@@ -21,7 +21,15 @@ async fn demo() -> Unit {
   assert_true(help.stdout().contains("--schema-only"))
   let clean = @shell.Cmd("moon", [..prefix, old, old, ..files]).output()
   clean.check()
-  assert_eq(@json.parse(clean.stdout()).stringify(), "{\"changes\":[]}")
+  guard @json.parse(clean.stdout()) is {
+    "format_version": 1, "changes": [],
+    "coverage": [
+      { "name": "flight-board", "operations": [{ "name": "FlightBoard", .. }], .. },
+      { "name": "crew-roster", "operations": [{ "name": "CrewRoster", .. }], .. },
+    ], ..
+  } else {
+    fail("unexpected coverage in a clean report: " + clean.stdout())
+  }
   let changed = @shell.Cmd("moon", [..prefix, old, next, ..files]).output()
   assert_eq(changed.exit_code(), 1)
   let report = @json.parse(changed.stdout())
@@ -71,7 +79,12 @@ async fn demo() -> Unit {
     [..prefix, "--schema-only", old, next],
   ).output()
   assert_eq(schema_only.exit_code(), 1)
-  assert_eq(@json.parse(schema_only.stdout()), @json.parse(global.stdout()))
+  guard @json.parse(schema_only.stdout()) is {
+    "format_version": 1, "changes": schema_changes, "coverage": [], ..
+  } && @json.parse(global.stdout()) is { "changes": global_changes, .. } else {
+    fail("unexpected schema-only report: " + schema_only.stdout())
+  }
+  assert_eq(schema_changes, global_changes)
   let schema_clean = @shell.Cmd(
     "moon",
     [..prefix, "--schema-only", old, old],

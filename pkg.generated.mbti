@@ -9,6 +9,8 @@ import {
 // Values
 pub fn analyze_upgrade(Source, Source, Array[Client]) -> Report raise AnalysisError
 
+pub fn analyze_upgrade_with_coverage(Source, Source, Array[Client]) -> AnalyzedUpgrade raise AnalysisError
+
 // Errors
 pub(all) suberror AnalysisError {
   Invalid(Location, String)
@@ -16,6 +18,19 @@ pub(all) suberror AnalysisError {
 }
 
 // Types and methods
+#derive(Eq, @debug.Debug)
+pub struct AnalyzedUpgrade {
+  report : Report
+  coverage : Array[ClientCoverage]
+}
+pub fn AnalyzedUpgrade::equal(Self, Self) -> Bool
+pub fn AnalyzedUpgrade::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn AnalyzedUpgrade::not_equal(Self, Self) -> Bool
+pub fn AnalyzedUpgrade::to_json(Self) -> @json.Json
+pub fn AnalyzedUpgrade::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for AnalyzedUpgrade
+pub impl @json.ToJson for AnalyzedUpgrade
+
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Change {
   coordinate : String
@@ -47,6 +62,18 @@ pub(all) struct Client {
 }
 
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
+pub(all) struct ClientCoverage {
+  name : String
+  sources : Array[String]
+  operations : Array[OperationCoverage]
+}
+pub fn ClientCoverage::equal(Self, Self) -> Bool
+pub fn ClientCoverage::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn ClientCoverage::not_equal(Self, Self) -> Bool
+pub fn ClientCoverage::to_json(Self) -> @json.Json
+pub fn ClientCoverage::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) struct Impact {
   client : String
   operation : String
@@ -71,6 +98,17 @@ pub fn Location::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.
 pub fn Location::not_equal(Self, Self) -> Bool
 pub fn Location::to_json(Self) -> @json.Json
 pub fn Location::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
+pub(all) struct OperationCoverage {
+  name : String
+  location : Location
+}
+pub fn OperationCoverage::equal(Self, Self) -> Bool
+pub fn OperationCoverage::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn OperationCoverage::not_equal(Self, Self) -> Bool
+pub fn OperationCoverage::to_json(Self) -> @json.Json
+pub fn OperationCoverage::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) enum ReasonCode {

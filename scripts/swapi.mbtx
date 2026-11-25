@@ -31,7 +31,14 @@ async fn verify(root : String) -> Unit {
     "moon", [..prefix, baseline, baseline, "relay-client", upstream_query, "node-client", local_query],
   ).output()
   old.check()
-  assert_eq(@json.parse(old.stdout()), { "changes": [] })
+  guard @json.parse(old.stdout()) is {
+    "format_version": 1,
+    "changes": [],
+    "coverage": [{ "name": "relay-client", .. }, { "name": "node-client", .. }],
+    ..
+  } else {
+    fail("unexpected SWAPI baseline coverage: " + old.stdout())
+  }
 
   let compatible = @shell.Cmd(
     "moon", [..prefix, baseline, candidate, "relay-client", upstream_query],

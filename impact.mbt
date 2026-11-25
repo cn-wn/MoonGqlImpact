@@ -375,6 +375,17 @@ pub fn analyze_upgrade(
   proposed : Source,
   clients : Array[Client],
 ) -> Report raise AnalysisError {
+  analyze_upgrade_with_coverage(baseline, proposed, clients).report
+}
+
+///|
+/// Analyze the same upgrade as analyze_upgrade and record every checked operation.
+/// An empty client list yields a schema-only report with empty coverage.
+pub fn analyze_upgrade_with_coverage(
+  baseline : Source,
+  proposed : Source,
+  clients : Array[Client],
+) -> AnalyzedUpgrade raise AnalysisError {
   let old = index(baseline)
   let next = index(proposed)
   if old.root != next.root {
@@ -428,6 +439,7 @@ pub fn analyze_upgrade(
   let abstract_changes = abstract_changes(old, next, ordered)
   let input_changes = input_object_diffs(old, next, ordered)
   let names = Set([])
+  let coverage = []
   for client in clients {
     if client.name == "" || names.contains(client.name) {
       raise Invalid(
@@ -438,6 +450,7 @@ pub fn analyze_upgrade(
     names.add(client.name)
     let catalog = catalog(client)
     let seen_fragments = Set([])
+    let analyzed_operations = []
     for operation, (file, query) in catalog.operations {
       let variables = Map([])
       for definition in query.variable_definitions {
@@ -487,14 +500,23 @@ pub fn analyze_upgrade(
           raise Invalid(file.at(definition.position), "unused variable \{name}")
         }
       }
+      analyzed_operations.push({
+        name: operation,
+        location: file.at(query.position),
+      })
     }
     for name, (source, fragment) in catalog.fragments {
       if !seen_fragments.contains(name) {
         raise Invalid(source.at(fragment.position), "unused fragment: \{name}")
       }
     }
+    coverage.push({
+      name: client.name,
+      sources: client.sources.map(source => source.path),
+      operations: analyzed_operations,
+    })
   }
-  { changes: ordered, }
+  { report: { changes: ordered, }, coverage, }
 }
 
 ///|

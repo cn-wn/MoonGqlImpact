@@ -154,11 +154,14 @@ fn execute(
   markdown : Bool,
 ) -> Int32 raise @impact.AnalysisError {
   let { baseline, proposed, clients, observed_only, gate, } = input
-  let report = @impact.analyze_upgrade(baseline, proposed, clients)
+  let analysis = @impact.analyze_upgrade_with_coverage(
+    baseline, proposed, clients,
+  )
+  let report = analysis.report
   if markdown {
     println(report.to_markdown())
   } else {
-    println(report.to_json().stringify())
+    println(analysis.to_json().stringify())
   }
   let blocks = match gate {
     Some(gate) =>
