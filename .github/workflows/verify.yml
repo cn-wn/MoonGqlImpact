@@ -78,3 +78,14 @@ jobs:
       - name: Verify client impact on the public SWAPI schema
         if: runner.os == 'Linux'
         run: moon run --deny-warn scripts/swapi.mbtx -- swapi-upstream
+
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: '22'
+      - name: Install the pinned GraphQL.js reference
+        if: runner.os == 'Linux'
+        run: npm install --prefix _build/graphql-oracle --no-package-lock --ignore-scripts --no-audit --no-fund graphql@16.11.0
+      - name: Compare operation validation with GraphQL.js
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/graphql_oracle.mbtx -- _build/graphql-oracle/node_modules/graphql

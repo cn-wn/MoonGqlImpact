@@ -1,0 +1,19 @@
+enum Status { READY WAITING }
+
+input Rule {
+  status: Status
+  limit: Int = 10
+}
+
+input BookFilter {
+  rules: [Rule!]
+}
+
+type Book { title: String }
+type Film { title: String }
+union Result = Book | Film
+
+type Query {
+  books(filter: BookFilter): String!
+  result: Result
+}

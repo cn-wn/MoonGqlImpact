@@ -34,6 +34,7 @@ priv struct IndexedField {
 ///|
 priv struct Schema {
   root : String
+  input_objects : Map[String, InputObject]
   enums : Map[String, Array[String]]
   scalars : Map[String, String?]
   fields : Map[String, Map[String, IndexedField]]
@@ -162,6 +163,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
     GraphQLParseError(message, pos) => raise Invalid(source.at(pos), message)
   }
   let fields_by_type = Map([])
+  let input_objects = Map([])
+  let input_extensions = []
   let declarations = Map([])
   let interfaces = Map([])
   let unions = Map([])
@@ -197,6 +200,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
           scalar.name.has_prefix("__") ||
           declarations.contains(scalar.name) ||
           unions.contains(scalar.name) ||
+          input_objects.contains(scalar.name) ||
           enum_values.contains(scalar.name) ||
           scalars.contains(scalar.name) {
           raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
@@ -216,7 +220,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
           enum_values.contains(name) ||
           scalars.contains(name) ||
           declarations.contains(name) ||
-          unions.contains(name) {
+          unions.contains(name) ||
+          input_objects.contains(name) {
           raise Invalid(at, "duplicate or reserved enum: \{name}")
         }
         let values = Set([])
@@ -241,6 +246,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
           unions.contains(name) ||
           scalars.contains(name) ||
           enum_values.contains(name) ||
+          input_objects.contains(name) ||
           builtin(name) ||
           name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved type: \{name}")
@@ -272,6 +278,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
           unions.contains(name) ||
           scalars.contains(name) ||
           enum_values.contains(name) ||
+          input_objects.contains(name) ||
           builtin(name) ||
           name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved union: \{name}")
@@ -288,6 +295,31 @@ fn index(source : Source) -> Schema raise AnalysisError {
         }
         unions[name] = { at, members, }
       }
+      TypeDef(InputObjectTypeDef(input)) => {
+        let name = input.name
+        let at = source.at(input.position)
+        if declarations.contains(name) ||
+          unions.contains(name) ||
+          scalars.contains(name) ||
+          enum_values.contains(name) ||
+          input_objects.contains(name) ||
+          builtin(name) ||
+          name.has_prefix("__") {
+          raise Invalid(at, "duplicate or reserved input object \{name}")
+        }
+        if !input.directives.is_empty() {
+          raise Unsupported(
+            at, "input object directives are outside the input profile",
+          )
+        }
+        if input.fields.is_empty() {
+          raise Invalid(at, "input object must define at least one field")
+        }
+        let object = { at, fields: Map([]), }
+        index_input_fields(source, object, input.fields)
+        input_objects[name] = object
+      }
+      TypeExt(InputObjectTypeExt(extension)) => input_extensions.push(extension)
       TypeExt(ObjectTypeExt(extension)) => extensions.push(extension)
       TypeExt(EnumTypeExt(extension)) => enum_extensions.push(extension)
       TypeExt(InterfaceTypeExt(extension)) =>
@@ -298,6 +330,21 @@ fn index(source : Source) -> Schema raise AnalysisError {
           start, "schema definition is outside the supported query profile",
         )
     }
+  }
+  for extension in input_extensions {
+    let at = source.at(extension.position)
+    if !extension.directives.is_empty() {
+      raise Unsupported(
+        at, "input extension directives are outside the input profile",
+      )
+    }
+    guard input_objects.get(extension.name) is Some(object) &&
+      !extension.fields.is_empty() else {
+      raise Invalid(
+        at, "input extension must add fields to an existing input object",
+      )
+    }
+    index_input_fields(source, object, extension.fields)
   }
   for extension in enum_extensions {
     let at = source.at(extension.position)
@@ -391,6 +438,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   }
   let schema = {
     root,
+    input_objects,
     fields: fields_by_type,
     parents,
     interfaces,
@@ -421,6 +469,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       }
     }
   }
+  schema.validate_input_objects()
   schema.validate_implementations(declarations)
   schema
 }

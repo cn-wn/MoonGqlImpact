@@ -33,6 +33,12 @@ pub(all) enum ReasonCode {
   ArgumentTypeChanged
   InputEnumValueRemoved
   ArgumentDefaultChanged
+  InputFieldRemoved
+  RequiredInputFieldAdded
+  InputFieldBecameRequired
+  InputFieldTypeChanged
+  InputFieldDefaultChanged
+  InputVariableValueMayBreak
 }
 
 ///|
@@ -67,11 +73,17 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | InputEnumValueRemoved
     | AbstractTypeRemoved
     | AbstractMemberRemoved
-    | FragmentNoLongerPossible => Breaking
+    | FragmentNoLongerPossible
+    | InputFieldRemoved
+    | RequiredInputFieldAdded
+    | InputFieldBecameRequired
+    | InputFieldTypeChanged => Breaking
     OutputEnumValueAdded
     | OutputEnumValueRemoved
     | ArgumentDefaultChanged
-    | AbstractMemberAdded => Risk
+    | AbstractMemberAdded
+    | InputFieldDefaultChanged
+    | InputVariableValueMayBreak => Risk
     ScalarSpecificationChanged => Notice
   }
   { code: self, severity, }

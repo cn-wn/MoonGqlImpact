@@ -1,0 +1,112 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+let oracle : String =
+  #|const path = require('node:path');
+  #|const fs = require('node:fs');
+  #|const graphql = require(path.resolve(process.argv[1]));
+  #|const [before, after, queries, invalidMerge] = process.argv.slice(2);
+  #|if (graphql.version !== '16.11.0') throw new Error('Expected graphql@16.11.0');
+  #|const read = file => fs.readFileSync(file, 'utf8');
+  #|const oldSchema = graphql.buildSchema(read(before));
+  #|const newSchema = graphql.buildSchema(read(after));
+  #|const documents = graphql.separateOperations(graphql.parse(read(queries)));
+  #|const invalid = schema => Object.entries(documents)
+  #|  .filter(([, document]) => graphql.validate(schema, document).length > 0)
+  #|  .map(([name]) => name).sort();
+  #|const variables = graphql.getOperationAST(documents.Runtime).variableDefinitions;
+  #|const accepts = (schema, value) =>
+  #|  !graphql.getVariableValues(schema, variables, { filter: value }).errors;
+  #|console.log(JSON.stringify({
+  #|  baseline_invalid: invalid(oldSchema),
+  #|  proposed_invalid: invalid(newSchema),
+  #|  nullable_runtime: [accepts(oldSchema, {rules: [{status: null}]}),
+  #|    accepts(newSchema, {rules: [{status: null}]})],
+  #|  valid_runtime: [accepts(oldSchema, {rules: [{status: 'READY'}]}),
+  #|    accepts(newSchema, {rules: [{status: 'READY'}]})],
+  #|  invalid_merge: graphql.validate(oldSchema, graphql.parse(read(invalidMerge))).length > 0,
+  #|}));
+
+///|
+async fn verify(package_dir : String) -> Unit {
+  let root = "examples/input-objects/"
+  let old = root + "old.graphql"
+  let next = root + "new.graphql"
+  let queries = root + "queries.graphql"
+  let invalid_merge = root + "invalid-merge.graphql"
+  let reference = @shell.Cmd(
+    "node", ["-e", oracle, package_dir, old, next, queries, invalid_merge],
+  ).output()
+  reference.check()
+  guard @json.parse(reference.stdout()) is {
+    "baseline_invalid": [],
+    "proposed_invalid": invalid,
+    "nullable_runtime": [true, false],
+    "valid_runtime": [true, true],
+    "invalid_merge": true,
+    ..
+  } else {
+    fail("unexpected GraphQL.js reference results: " + reference.stdout())
+  }
+  let ref_invalid : Array[String] = @json.from_json(invalid)
+  assert_eq(ref_invalid, ["BookResult", "Default", "Missing", "Null"])
+  let prefix = ["run", "cmd/check", "--target", "native", "--", "--observed-only"]
+  let actual = @shell.Cmd("moon", [..prefix, old, next, "web", queries]).output()
+  assert_eq(actual.exit_code(), 1)
+  guard @json.parse(actual.stdout()) is {
+    "changes": [
+      {
+        "coordinate": "Query.books",
+        "reasons": [{ "code": "OutputNullabilityWeakened", .. }],
+        "impacts": output_impacts, ..
+      },
+      { "coordinate": "Result", "impacts": fragment_impacts, .. },
+      { "coordinate": "Rule.status", "impacts": input_impacts, .. },
+    ], ..
+  } else {
+    fail("unexpected upgrade report: " + actual.stdout())
+  }
+  let static_invalid = Set([])
+  for group in [input_impacts, fragment_impacts] {
+    let hits : Array[Json] = @json.from_json(group)
+    for hit in hits {
+      guard hit is { "operation": String(name), "reason_codes": codes, .. } else {
+        fail("invalid impact row")
+      }
+      let codes : Array[String] = @json.from_json(codes)
+      if name == "Runtime" {
+        assert_eq(codes, ["InputVariableValueMayBreak"])
+      }
+      if codes.contains("InputFieldTypeChanged") || codes.contains("FragmentNoLongerPossible") {
+        assert_true(static_invalid.add_and_check(name))
+      }
+    }
+  }
+  let inputs : Array[Json] = @json.from_json(input_impacts)
+  assert_true(inputs.any(hit => hit is { "operation": "Runtime", .. }))
+  assert_false(inputs.any(hit => hit is { "operation": "Safe" | "Merge", .. }))
+  assert_true(static_invalid.length() == ref_invalid.length())
+  assert_true(ref_invalid.all(name => static_invalid.contains(name)))
+  let outputs : Array[Json] = @json.from_json(output_impacts)
+  assert_true(outputs.any(hit => hit is { "operation": "Safe", .. }))
+  let rejected = @shell.Cmd("moon", [..prefix, old, next, "web", invalid_merge]).output()
+  assert_eq(rejected.exit_code(), 2)
+  assert_true(rejected.stdout().contains("conflicting selections"))
+  println("GraphQL.js 16.11.0 agrees on input, merge and fragment validation. Output contracts and runtime risk retain separate evidence.")
+}
+
+///|
+fn main {
+  let args = @env.args()
+  guard args.length() == 2 else {
+    abort("Usage: moon run --deny-warn scripts/graphql_oracle.mbtx -- PATH_TO_GRAPHQL_JS")
+  }
+  @async.run_async_main(async fn() { verify(args[1]) })
+}

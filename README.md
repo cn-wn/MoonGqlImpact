@@ -1,6 +1,6 @@
 # MoonGqlImpact
 
-MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query contract upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field or a weakened output type. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
+MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query contract upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field, a weakened output type, or a tighter input contract. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
 
 See the [0.1.0 release notes](CHANGELOG.md) and the [checked library example](README.mbt.md).
 
@@ -31,8 +31,8 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 | Level | Reason codes |
 | --- | --- |
-| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible` |
-| `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `AbstractMemberAdded` |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible` |
+| `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded` |
 | `notice` | `ScalarSpecificationChanged` |
 
 `FieldRemoved` describes a selection that fails validation. `OutputNullabilityWeakened` describes a weaker response guarantee, even when the query remains valid. An enum addition can affect consumers that handle every known value explicitly. A scalar specification URL change records a change in the declaration.
@@ -48,6 +48,8 @@ moon run cmd/check --target native -- --observed-only examples/arguments/old.gra
 ```
 
 The report identifies `Query.user(id:)`. The mobile operations `EditProfile` and `CurrentUser` are affected because one supplies a nullable variable and the other omits the argument. The desktop operation uses a non-null variable and can keep its query. Run with the desktop operation alone to pass `--observed-only` while still seeing the global change.
+
+The [nested input example](examples/input-objects/README.md) checks a tightened field inside a list of input objects. It shows which queries fail validation, which need to review runtime variable values, and where a weaker output guarantee affects otherwise valid queries.
 
 ## Try a public schema
 
@@ -73,14 +75,16 @@ Selections may use `@include(if: true)` or `@skip(if: false)` with either litera
 
 Output enums are checked by value set, including values added through `extend enum`. Extensions can precede the enum definition. Duplicate values and missing base enums are rejected. Adding or removing a value flags affected fields and registered queries. Additions can affect exhaustive client code, and removals change the documented result domain. Both are classified as risks and count toward the default gate. Reports render enum domains as `Status{READY, WAITING}` inside their original list and nullability wrappers.
 
-Field arguments and variables support built-in scalars, enums, and nested lists. The checker reports removed arguments, new required arguments, type changes that can affect existing values, input enum narrowing, and changes in defaults on existing arguments. It validates baseline uses and attributes changes to the affected operation. Variables declared nullable can still carry an explicit null even if their default lets the query pass validation. Arguments appear as coordinates such as `Query.user(id:)` with their type and default in the existing JSON shape. Schema locations point to argument declarations, and operation locations point to the field selection. For a new required argument, the previous type is `<absent>` and the baseline location points to the field.
+Field arguments and variables support built-in scalars, enums, input objects, and nested lists. The checker reports removed arguments, new required arguments, type changes that can affect existing values, input enum narrowing, and changes in defaults on existing arguments. It validates baseline uses and attributes changes to the affected operation. Variables declared nullable can still carry an explicit null even if their default lets the query pass validation. Arguments appear as coordinates such as `Query.user(id:)` with their type and default in the existing JSON shape. Schema locations point to argument declarations, and operation locations point to the field selection. For a new required argument, the previous type is `<absent>` and the baseline location points to the field.
+
+Input objects can use both input definitions and extensions. The checker validates object literals and variable defaults, resolves nested references, and reports removed fields, tighter types or requirements, input enum narrowing, and changes in defaults at coordinates such as `Rule.status`. Omitted fields and explicit nulls are checked separately. When a query stays valid but a variable could carry a value that the proposed schema rejects, the impact has the `InputVariableValueMayBreak` reason. With `--observed-only --fail-on=breaking`, this risk alone does not block CI. A variable default rejected by the proposed schema still produces a breaking impact. Required input cycles and cyclic default expansion are rejected.
 
 Changes to an interface or union list its old and proposed concrete object types. An added concrete type is a risk for registered operations selecting that abstract result. For removals, evidence points to the fragment spread that loses a possible type. `FragmentNoLongerPossible` indicates that the fragment no longer matches at its site, including after narrowing by enclosing fragments. The checker validates interface inheritance and field signatures, union members, and response shape when aliases overlap. Extensions can add object or interface fields, implemented interfaces, union members, and enum values.
 
-The checker rejects input objects, custom scalar inputs, argument directives, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects custom scalar inputs, directives on input objects and input fields, argument directives, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
-## Sources and roadmap
+## Sources and license
 
 The [moonbit-community/graphql parser](https://github.com/moonbit-community/graphql.mbt) (Apache-2.0, 0.1.1) provides GraphQL syntax and positions. The output comparison and operation tracing are implemented here. The [GraphQL October 2021 specification](https://spec.graphql.org/October2021/) is the semantic reference. [NASA Apollo 11](https://www.nasa.gov/mission/apollo-11/) is the factual source for the launch date and crew names. The example schemas and queries are authored for this repository. The native CLI uses [moonbitlang/x](https://github.com/moonbitlang/x) (Apache-2.0). The [MoonBit async package](https://github.com/moonbitlang/async) (Apache-2.0) runs the end-to-end check with `moon run --deny-warn scripts/demo.mbtx`.
 
-Input object compatibility is planned. Project license is Apache-2.0.
+The reference check runs [GraphQL.js 16.11.0](https://github.com/graphql/graphql-js/releases/tag/v16.11.0) (MIT) on the nested-input fixtures. It is used only in verification. Project license is Apache-2.0.

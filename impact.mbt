@@ -127,6 +127,7 @@ priv struct Walk {
   schema : Schema
   proposed : Schema
   argument_changes : Map[String, Array[ArgumentDiff]]
+  input_changes : Map[String, Array[ArgumentDiff]]
   abstract_changes : Map[String, Change]
   catalog : Catalog
   changes : Map[String, Change]
@@ -135,7 +136,7 @@ priv struct Walk {
   seen_fragments : Set[String]
   active : Set[String]
   response_fields : Map[String, Array[ResponseSelection]]
-  reported : Set[(String, String, String, Int32, Int32)]
+  reported : Map[(String, String, String, Int32, Int32), Int32]
   variables : Map[String, @gql.VariableDefinition]
   used_variables : Set[String]
   mut budget : Int32
@@ -256,6 +257,24 @@ fn Walk::visit(
           at,
         )
         self.validate_arguments(old, arguments, at)
+        if !self.input_changes.is_empty() &&
+          self.proposed.fields.get(owner) is Some(fields) &&
+          fields.get(field.name) is Some(proposed) {
+          let site = { key, path: next_path, at, }
+          for name, argument in old.arguments {
+            if proposed.arguments.get(name) is Some(after) &&
+              named(argument.kind) == named(after.kind) &&
+              self.schema.input_objects.contains(named(argument.kind)) {
+              let supplied = match arguments.get(name) {
+                Some(value) => Some(value)
+                None => argument.default_value
+              }
+              if supplied is Some(value) {
+                self.observe_input(argument.kind, value, site)
+              }
+            }
+          }
+        }
         if self.argument_changes.get(coordinate) is Some(diffs) {
           for diff in diffs {
             let reasons = self.affected_argument_reasons(
@@ -407,6 +426,7 @@ pub fn analyze_upgrade(
     }
   }
   let abstract_changes = abstract_changes(old, next, ordered)
+  let input_changes = input_object_diffs(old, next, ordered)
   let names = Set([])
   for client in clients {
     if client.name == "" || names.contains(client.name) {
@@ -439,6 +459,7 @@ pub fn analyze_upgrade(
         schema: old,
         proposed: next,
         argument_changes,
+        input_changes,
         abstract_changes,
         catalog,
         changes,
@@ -447,7 +468,7 @@ pub fn analyze_upgrade(
         seen_fragments,
         active: Set([]),
         response_fields: Map([]),
-        reported: Set([]),
+        reported: Map([]),
         variables,
         used_variables: Set([]),
         budget: 100000,

@@ -17,10 +17,12 @@ fn Schema::check_input_type(
   at : Location,
 ) -> Unit raise AnalysisError {
   let name = named(kind)
-  if !builtin(name) && !self.enums.contains(name) {
+  if !builtin(name) &&
+    !self.enums.contains(name) &&
+    !self.input_objects.contains(name) {
     raise Unsupported(
       at,
-      "unsupported input type: \{name}; use built-in scalars, enums or lists",
+      "unsupported input type: \{name}; use built-in scalars, enums, lists or input objects",
     )
   }
 }
@@ -89,6 +91,11 @@ fn Schema::value_fits(
         FloatValue(number) => name == "Float" && number.is_finite()
         StringValue(_) => name == "String" || name == "ID"
         BooleanValue(_) => name == "Boolean"
+        ObjectValue(entries) =>
+          match self.input_objects.get(name) {
+            Some(object) => self.object_literal_fits(object, entries, variables)
+            None => false
+          }
         EnumValue(value) =>
           match self.enums.get(name) {
             Some(values) => values.contains(value)
@@ -110,8 +117,13 @@ fn input_text(value : @gql.Value) -> String {
     NullValue => "null"
     EnumValue(name) => name
     ListValue(values) => "[" + values.map(input_text).join(", ") + "]"
-    // Only validated constant scalar, enum and list values reach this formatter.
-    Variable(_) | ObjectValue(_) => abort("invalid argument default")
+    ObjectValue(entries) =>
+      "{" +
+      sorted_input_entries(entries)
+      .map(entry => entry.0 + ": " + input_text(entry.1))
+      .join(", ") +
+      "}"
+    Variable(name) => "$" + name
   }
 }
 
@@ -139,25 +151,55 @@ fn Schema::enum_narrowed(
 }
 
 ///|
-fn coerce_literal(kind : @gql.GqlType, value : @gql.Value) -> @gql.Value {
+fn Schema::coerce_literal(
+  self : Schema,
+  kind : @gql.GqlType,
+  value : @gql.Value,
+) -> @gql.Value {
   if value is (NullValue | Variable(_)) {
     return value
   }
   match (nullable(kind), value) {
     (ListType(inner), ListValue(items)) =>
-      ListValue(items.map(item => coerce_literal(inner, item)))
-    (ListType(inner), _) => ListValue([coerce_literal(inner, value)])
+      ListValue(items.map(item => self.coerce_literal(inner, item)))
+    (ListType(inner), _) => ListValue([self.coerce_literal(inner, value)])
     (NamedType("ID"), IntValue(number)) => StringValue(number.value.to_string())
     (NamedType("Float"), IntValue(number)) =>
       FloatValue(number.value.to_double())
+    (NamedType(name), ObjectValue(entries)) =>
+      match self.input_objects.get(name) {
+        Some(object) =>
+          ObjectValue(
+            entries.map(entry => {
+              match object.fields.get(entry.0) {
+                Some(field) =>
+                  (entry.0, self.coerce_literal(field.kind, entry.1))
+                None => entry
+              }
+            }),
+          )
+        None => value
+      }
     _ => value
   }
 }
 
 ///|
-fn same_default(old : Argument, next : Argument) -> Bool {
-  old.default_value.map(value => coerce_literal(old.kind, value)) ==
-  next.default_value.map(value => coerce_literal(next.kind, value))
+fn same_default(
+  old_schema : Schema,
+  new_schema : Schema,
+  old : Argument,
+  next : Argument,
+) -> Bool {
+  match (old.default_value, next.default_value) {
+    (None, None) => true
+    (Some(a), Some(b)) =>
+      same_value(
+        old_schema.coerce_literal(old.kind, a),
+        new_schema.coerce_literal(next.kind, b),
+      )
+    _ => false
+  }
 }
 
 ///|
@@ -196,10 +238,10 @@ fn Walk::check_argument_variables(
       for item in items {
         self.check_argument_variables(at, item)
       }
-    ObjectValue(_) =>
-      raise Unsupported(
-        at, "input object literals are outside the argument profile",
-      )
+    ObjectValue(entries) =>
+      for (_, item) in entries {
+        self.check_argument_variables(at, item)
+      }
     _ => ()
   }
 }
@@ -225,7 +267,10 @@ fn Walk::argument_type_affects(
     self.variables,
     location_default=old.default_value is Some(_),
   ) ||
-  coerce_literal(old.kind, value) != coerce_literal(proposed.kind, value) ||
+  !same_value(
+    self.schema.coerce_literal(old.kind, value),
+    schema.coerce_literal(proposed.kind, value),
+  ) ||
   self.variable_nullability_affects(old.kind, proposed.kind, value)
 }
 
@@ -279,10 +324,11 @@ fn Walk::affected_argument_reasons(
 ) -> Array[ReasonCode] {
   diff.reasons.filter(code => {
     match (code, diff.old, diff.proposed) {
-      (ArgumentRemoved, _, _) => value is Some(_)
-      (RequiredArgumentAdded, _, _) => true
-      (ArgumentDefaultChanged, _, _) => self.may_use_argument_default(value)
-      (ArgumentBecameRequired, _, Some(next)) =>
+      (ArgumentRemoved | InputFieldRemoved, _, _) => value is Some(_)
+      (RequiredArgumentAdded | RequiredInputFieldAdded, _, _) => true
+      (ArgumentDefaultChanged | InputFieldDefaultChanged, _, _) =>
+        self.may_use_argument_default(value)
+      (ArgumentBecameRequired | InputFieldBecameRequired, _, Some(next)) =>
         match value {
           None => true
           Some(Variable(name)) =>
@@ -292,7 +338,7 @@ fn Walk::affected_argument_reasons(
       (InputEnumValueRemoved, _, Some(next)) =>
         value is Some(input) &&
         uses_removed_enum(input, self.proposed.enums[named(next.kind)])
-      (ArgumentTypeChanged, Some(old), Some(next)) =>
+      (ArgumentTypeChanged | InputFieldTypeChanged, Some(old), Some(next)) =>
         self.argument_type_affects(old, next, value)
       _ => false
     }
@@ -324,7 +370,7 @@ fn argument_reasons(
       if named(a.kind) == named(b.kind) && old.enum_narrowed(next, a.kind) {
         reasons.push(InputEnumValueRemoved)
       }
-      if !same_default(a, b) {
+      if !same_default(old, next, a, b) {
         if a.default_value is Some(_) && b.required() {
           reasons.push(ArgumentBecameRequired)
         }
@@ -390,7 +436,7 @@ fn same_arguments(
     return false
   }
   for name, value in left {
-    if right.get(name) != Some(value) {
+    if !(right.get(name) is Some(other) && same_value(value, other)) {
       return false
     }
   }
@@ -437,15 +483,22 @@ fn Walk::record_impact(
   at : Location,
   reasons : Array[ReasonCode],
 ) -> Unit {
-  if self.reported.add_and_check(
-      (change.coordinate, key, at.path, at.line, at.column),
-    ) {
+  let site = (change.coordinate, key, at.path, at.line, at.column)
+  if self.reported.get(site) is Some(index) {
+    let codes = change.impacts[index].reason_codes.unwrap()
+    for reason in reasons {
+      if !codes.contains(reason) {
+        codes.push(reason)
+      }
+    }
+  } else {
+    self.reported[site] = change.impacts.length()
     change.impacts.push({
       client: self.client,
       operation: self.operation,
       response_path: path,
       selection: at,
-      reason_codes: Some(reasons),
+      reason_codes: Some(reasons.copy()),
     })
   }
 }

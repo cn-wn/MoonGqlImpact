@@ -1,0 +1,29 @@
+query Safe {
+  books(filter: { rules: { status: READY } })
+}
+query Missing {
+  books(filter: { rules: [{}] })
+}
+query Null {
+  books(filter: { rules: [{ status: null }] })
+}
+query Runtime($filter: BookFilter!) {
+  books(filter: $filter)
+}
+query Default($filter: BookFilter = { rules: [{}] }) {
+  books(filter: $filter)
+}
+query Merge {
+  same: books(filter: { rules: [{ status: READY, limit: 1 }] })
+  same: books(filter: { rules: [{ limit: 1, status: READY }] })
+}
+query BookResult {
+  result {
+    ... on Book { title }
+  }
+}
+query FilmResult {
+  result {
+    ... on Film { title }
+  }
+}

@@ -90,6 +90,12 @@ pub(all) enum ReasonCode {
   ArgumentTypeChanged
   InputEnumValueRemoved
   ArgumentDefaultChanged
+  InputFieldRemoved
+  RequiredInputFieldAdded
+  InputFieldBecameRequired
+  InputFieldTypeChanged
+  InputFieldDefaultChanged
+  InputVariableValueMayBreak
 }
 pub fn ReasonCode::equal(Self, Self) -> Bool
 pub fn ReasonCode::not_equal(Self, Self) -> Bool

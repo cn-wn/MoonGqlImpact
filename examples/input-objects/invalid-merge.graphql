@@ -1,0 +1,4 @@
+query Bad {
+  same: books(filter: { rules: { status: READY } })
+  same: books(filter: { rules: { status: WAITING } })
+}

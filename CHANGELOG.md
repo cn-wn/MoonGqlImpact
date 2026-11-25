@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Analyze nested input objects and extensions, with field-level evidence for validation failures, runtime variable risks, and changed defaults.
+- Cross-check nested coercion, alias merging, and fragment validity with GraphQL.js 16.11.0 in CI.
+
 - Verify compatible, affected, and unsupported queries in CI against a pinned public SWAPI schema.
 
 - Analyze interfaces and unions, report changes in possible object types, and pinpoint fragments that become impossible.
