@@ -42,8 +42,10 @@ pub fn Report::to_markdown(self : Report) -> String {
       None =>
         if change.coordinate.has_suffix(":)") {
           lines.push("- Argument removed")
-        } else {
+        } else if change.coordinate.contains(".") {
           lines.push("- Field removed")
+        } else {
+          lines.push("- Type removed")
         }
     }
     if change.reasons is Some(reasons) {

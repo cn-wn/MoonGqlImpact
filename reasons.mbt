@@ -22,6 +22,10 @@ pub(all) enum ReasonCode {
   OutputNullabilityWeakened
   OutputEnumValueAdded
   OutputEnumValueRemoved
+  AbstractTypeRemoved
+  AbstractMemberAdded
+  AbstractMemberRemoved
+  FragmentNoLongerPossible
   ScalarSpecificationChanged
   ArgumentRemoved
   RequiredArgumentAdded
@@ -60,9 +64,14 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | RequiredArgumentAdded
     | ArgumentBecameRequired
     | ArgumentTypeChanged
-    | InputEnumValueRemoved => Breaking
-    OutputEnumValueAdded | OutputEnumValueRemoved | ArgumentDefaultChanged =>
-      Risk
+    | InputEnumValueRemoved
+    | AbstractTypeRemoved
+    | AbstractMemberRemoved
+    | FragmentNoLongerPossible => Breaking
+    OutputEnumValueAdded
+    | OutputEnumValueRemoved
+    | ArgumentDefaultChanged
+    | AbstractMemberAdded => Risk
     ScalarSpecificationChanged => Notice
   }
   { code: self, severity, }
@@ -125,7 +134,9 @@ fn output_reasons(
   let reasons = []
   let name = named(field.kind)
   if !same_output_shape(field.kind, proposed.kind) ||
-    old.objects.contains(name) != next.objects.contains(name) ||
+    old.is_object(name) != next.is_object(name) ||
+    old.interfaces.contains(name) != next.interfaces.contains(name) ||
+    old.unions.contains(name) != next.unions.contains(name) ||
     old.enums.contains(name) != next.enums.contains(name) {
     reasons.push(OutputTypeChanged)
   } else if !preserves(field.kind, proposed.kind) {

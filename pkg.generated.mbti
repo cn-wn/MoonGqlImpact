@@ -79,6 +79,10 @@ pub(all) enum ReasonCode {
   OutputNullabilityWeakened
   OutputEnumValueAdded
   OutputEnumValueRemoved
+  AbstractTypeRemoved
+  AbstractMemberAdded
+  AbstractMemberRemoved
+  FragmentNoLongerPossible
   ScalarSpecificationChanged
   ArgumentRemoved
   RequiredArgumentAdded

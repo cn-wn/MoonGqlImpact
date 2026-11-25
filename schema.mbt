@@ -36,7 +36,11 @@ priv struct Schema {
   root : String
   enums : Map[String, Array[String]]
   scalars : Map[String, String?]
-  objects : Map[String, Map[String, IndexedField]]
+  fields : Map[String, Map[String, IndexedField]]
+  parents : Map[String, Set[String]]
+  interfaces : Map[String, Location]
+  unions : Map[String, UnionDeclaration]
+  possible : Map[String, Set[String]]
 }
 
 ///|
@@ -157,7 +161,12 @@ fn index(source : Source) -> Schema raise AnalysisError {
   let doc = @gql.parse_schema(source.text) catch {
     GraphQLParseError(message, pos) => raise Invalid(source.at(pos), message)
   }
-  let objects = Map([])
+  let fields_by_type = Map([])
+  let declarations = Map([])
+  let interfaces = Map([])
+  let unions = Map([])
+  let interface_extensions = []
+  let union_extensions = []
   let scalars = Map([])
   let enums = Map([])
   let enum_values = Map([])
@@ -186,7 +195,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
         let specification = scalar_specification(source, scalar.directives)
         if builtin(scalar.name) ||
           scalar.name.has_prefix("__") ||
-          objects.contains(scalar.name) ||
+          declarations.contains(scalar.name) ||
+          unions.contains(scalar.name) ||
           enum_values.contains(scalar.name) ||
           scalars.contains(scalar.name) {
           raise Invalid(at, "duplicate or reserved scalar: \{scalar.name}")
@@ -205,7 +215,8 @@ fn index(source : Source) -> Schema raise AnalysisError {
           name.has_prefix("__") ||
           enum_values.contains(name) ||
           scalars.contains(name) ||
-          objects.contains(name) {
+          declarations.contains(name) ||
+          unions.contains(name) {
           raise Invalid(at, "duplicate or reserved enum: \{name}")
         }
         let values = Set([])
@@ -215,33 +226,76 @@ fn index(source : Source) -> Schema raise AnalysisError {
         }
         enum_values[name] = values
       }
-      TypeDef(ObjectTypeDef(object)) => {
-        let at = source.at(object.position)
-        if objects.contains(object.name) ||
-          scalars.contains(object.name) ||
-          enum_values.contains(object.name) ||
-          builtin(object.name) ||
-          object.name.has_prefix("__") {
-          raise Invalid(at, "duplicate or reserved object: \{object.name}")
+      TypeDef(
+        ObjectTypeDef(
+          { name, position, directives, fields, implements_interfaces, .. },
+        ),
+      )
+      | TypeDef(
+        InterfaceTypeDef(
+          { name, position, directives, fields, implements_interfaces, .. },
+        ),
+      ) => {
+        let at = source.at(position)
+        if declarations.contains(name) ||
+          unions.contains(name) ||
+          scalars.contains(name) ||
+          enum_values.contains(name) ||
+          builtin(name) ||
+          name.has_prefix("__") {
+          raise Invalid(at, "duplicate or reserved type: \{name}")
         }
-        if !object.implements_interfaces.is_empty() ||
-          !object.directives.is_empty() {
+        if !directives.is_empty() {
           raise Unsupported(
-            at, "interfaces and schema directives are outside the output profile",
+            at, "composite type directives are outside the output profile",
           )
         }
-        let fields = Map([])
-        index_fields(source, fields, object.fields)
-        if fields.is_empty() {
-          raise Invalid(at, "object must define at least one field")
+        let indexed = Map([])
+        index_fields(source, indexed, fields)
+        if indexed.is_empty() {
+          raise Invalid(
+            at, "object or interface must define at least one field",
+          )
         }
-        objects[object.name] = fields
+        let parents = Set([])
+        add_type_names(parents, implements_interfaces, at)
+        declarations[name] = { at, parents, }
+        fields_by_type[name] = indexed
+        if definition is TypeDef(InterfaceTypeDef(_)) {
+          interfaces[name] = at
+        }
+      }
+      TypeDef(UnionTypeDef(union)) => {
+        let at = source.at(union.position)
+        let name = union.name
+        if declarations.contains(name) ||
+          unions.contains(name) ||
+          scalars.contains(name) ||
+          enum_values.contains(name) ||
+          builtin(name) ||
+          name.has_prefix("__") {
+          raise Invalid(at, "duplicate or reserved union: \{name}")
+        }
+        if !union.directives.is_empty() {
+          raise Unsupported(
+            at, "union directives are outside the output profile",
+          )
+        }
+        let members = Set([])
+        add_type_names(members, union.types, at)
+        if members.is_empty() {
+          raise Invalid(at, "union must define at least one object type")
+        }
+        unions[name] = { at, members, }
       }
       TypeExt(ObjectTypeExt(extension)) => extensions.push(extension)
       TypeExt(EnumTypeExt(extension)) => enum_extensions.push(extension)
+      TypeExt(InterfaceTypeExt(extension)) =>
+        interface_extensions.push(extension)
+      TypeExt(UnionTypeExt(extension)) => union_extensions.push(extension)
       _ =>
         raise Unsupported(
-          start, "only object definitions, object field extensions, scalar and enum definitions and a query root are supported",
+          start, "schema definition is outside the supported query profile",
         )
     }
   }
@@ -271,38 +325,86 @@ fn index(source : Source) -> Schema raise AnalysisError {
   }
   for extension in extensions {
     let at = source.at(extension.position)
-    if !extension.implements_interfaces.is_empty() ||
-      !extension.directives.is_empty() {
-      raise Unsupported(at, "object extensions may only add fields")
+    let name = extension.name
+    guard declarations.get(name) is Some(declaration) &&
+      !interfaces.contains(name) else {
+      raise Invalid(at, "extension requires an existing object: \{name}")
     }
-    guard objects.get(extension.name) is Some(fields) else {
+    validate_composite_extension(
+      at,
+      extension.directives,
+      extension.fields,
+      extension.implements_interfaces,
+    )
+    add_type_names(declaration.parents, extension.implements_interfaces, at)
+    index_fields(source, fields_by_type[name], extension.fields)
+  }
+  for extension in interface_extensions {
+    let at = source.at(extension.position)
+    let name = extension.name
+    if !interfaces.contains(name) {
+      raise Invalid(at, "extension requires an existing interface: \{name}")
+    }
+    validate_composite_extension(
+      at,
+      extension.directives,
+      extension.fields,
+      extension.implements_interfaces,
+    )
+    add_type_names(
+      declarations[name].parents,
+      extension.implements_interfaces,
+      at,
+    )
+    index_fields(source, fields_by_type[name], extension.fields)
+  }
+  for extension in union_extensions {
+    let at = source.at(extension.position)
+    guard unions.get(extension.name) is Some(union) else {
       raise Invalid(
         at,
-        "extension requires an existing object: \{extension.name}",
+        "extension requires an existing union: \{extension.name}",
       )
     }
-    if extension.fields.is_empty() {
-      raise Invalid(at, "object extension must add at least one field")
+    if !extension.directives.is_empty() {
+      raise Unsupported(at, "union extension directives are unsupported")
     }
-    index_fields(source, fields, extension.fields)
+    if extension.types.is_empty() {
+      raise Invalid(at, "union extension must add at least one member")
+    }
+    add_type_names(union.members, extension.types, at)
   }
   if root is None &&
-    (objects.contains("Mutation") || objects.contains("Subscription")) {
+    (declarations.contains("Mutation") || declarations.contains("Subscription")) {
     raise Unsupported(
       start, "implicit mutation and subscription roots are outside the output profile",
     )
   }
   let root = root.unwrap_or("Query")
-  if !objects.contains(root) {
+  if !declarations.contains(root) || interfaces.contains(root) {
     raise Invalid(start, "query root object \{root} is missing")
   }
-  let schema = { root, objects, enums, scalars, }
+  let possible = build_possible_types(declarations, interfaces, unions)
+  let parents = Map([])
+  for name, declaration in declarations {
+    parents[name] = declaration.parents
+  }
+  let schema = {
+    root,
+    fields: fields_by_type,
+    parents,
+    interfaces,
+    unions,
+    possible,
+    enums,
+    scalars,
+  }
   let no_variables = Map([])
-  for _, fields in objects {
+  for _, fields in fields_by_type {
     for _, field in fields {
       let name = named(field.kind)
       if !builtin(name) &&
-        !objects.contains(name) &&
+        !possible.contains(name) &&
         !scalars.contains(name) &&
         !enums.contains(name) {
         raise Invalid(field.at, "undefined output type: \{name}")
@@ -319,6 +421,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
       }
     }
   }
+  schema.validate_implementations(declarations)
   schema
 }
 

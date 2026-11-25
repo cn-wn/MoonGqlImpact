@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Analyze interfaces and unions, report changes in possible object types, and pinpoint fragments that become impossible.
+
 - Add structured reason codes and severity levels to JSON and Markdown reports. CI can use `--fail-on` to block selected findings.
 
 - Analyze field arguments and operation variables for built-in scalar, enum and list inputs. Reports trace input regressions and default changes to affected operations.

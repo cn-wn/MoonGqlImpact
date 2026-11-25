@@ -127,13 +127,14 @@ priv struct Walk {
   schema : Schema
   proposed : Schema
   argument_changes : Map[String, Array[ArgumentDiff]]
+  abstract_changes : Map[String, Change]
   catalog : Catalog
   changes : Map[String, Change]
   client : String
   operation : String
   seen_fragments : Set[String]
   active : Set[String]
-  response_fields : Map[String, (String, Map[String, @gql.Value])]
+  response_fields : Map[String, Array[ResponseSelection]]
   reported : Set[(String, String, String, Int32, Int32)]
   variables : Map[String, @gql.VariableDefinition]
   used_variables : Set[String]
@@ -187,6 +188,8 @@ fn Walk::visit(
   set : @gql.SelectionSet,
   path : Array[String],
   depth : Int32,
+  scope : FragmentScope,
+  parents : Array[String],
 ) -> Unit raise AnalysisError {
   if depth > 128 {
     raise Unsupported(
@@ -217,28 +220,41 @@ fn Walk::visit(
           }
           arguments[name] = value
         }
-        if self.response_fields.get(key) is Some((previous, previous_arguments)) &&
-          (
-            previous != coordinate ||
-            !same_arguments(previous_arguments, arguments)
-          ) {
-          raise Invalid(at, "conflicting selections for response path \{key}")
+        let lineage = parents.copy()
+        lineage.push(owner)
+        if owner == self.schema.root &&
+          (field.name == "__schema" || field.name == "__type") {
+          raise Unsupported(
+            at, "schema introspection fields are outside the query profile",
+          )
         }
-        self.response_fields[key] = (coordinate, arguments)
         if field.name == "__typename" {
-          if !arguments.is_empty() {
-            raise Invalid(at, "__typename takes no arguments")
-          }
-          if !field.selection_set.items.is_empty() {
+          if !arguments.is_empty() || !field.selection_set.items.is_empty() {
             raise Invalid(
-              at, "__typename is a scalar and forbids a selection set",
+              at, "__typename is a scalar and takes no arguments or selection set",
             )
           }
+          self.check_response(
+            key,
+            {
+              name: field.name,
+              kind: NonNullType(NamedType("String")),
+              arguments,
+              parents: lineage,
+            },
+            at,
+          )
           continue
         }
-        guard self.schema.objects[owner].get(field.name) is Some(old) else {
+        guard self.schema.fields.get(owner) is Some(fields) &&
+          fields.get(field.name) is Some(old) else {
           raise Invalid(at, "baseline field does not exist: \{coordinate}")
         }
+        self.check_response(
+          key,
+          { name: field.name, kind: old.kind, arguments, parents: lineage, },
+          at,
+        )
         self.validate_arguments(old, arguments, at)
         if self.argument_changes.get(coordinate) is Some(diffs) {
           for diff in diffs {
@@ -252,10 +268,10 @@ fn Walk::visit(
           }
         }
         let child = named(old.kind)
-        if self.schema.objects.contains(child) ==
+        if self.schema.is_composite(child) ==
           field.selection_set.items.is_empty() {
           raise Invalid(
-            at, "object fields require a selection set and scalar fields forbid it",
+            at, "composite fields require a selection set and leaf fields forbid it",
           )
         }
         if self.changes.get(coordinate) is Some(change) {
@@ -268,7 +284,16 @@ fn Walk::visit(
           )
         }
         if !field.selection_set.items.is_empty() {
-          self.visit(child, source, field.selection_set, next_path, depth + 1)
+          self.observe_member_addition(child, next_path, at)
+          self.visit(
+            child,
+            source,
+            field.selection_set,
+            next_path,
+            depth + 1,
+            self.new_scope(child),
+            lineage,
+          )
         }
       }
       FragmentSpreadSelection(spread) => {
@@ -285,21 +310,40 @@ fn Walk::visit(
           )
         }
         self.validate_selection_directives(source, spread.directives)
-        if condition != owner || self.active.contains(name) {
-          raise Invalid(at, "inapplicable or cyclic fragment: \{name}")
+        if self.active.contains(name) {
+          raise Invalid(at, "cyclic fragment: \{name}")
         }
         self.seen_fragments.add(name)
         self.active.add(name)
-        self.visit(owner, file, fragment.selection_set, path, depth + 1)
+        let effective = self.visit_condition(owner, condition, path, at, scope)
+        self.visit(
+          condition,
+          file,
+          fragment.selection_set,
+          path,
+          depth + 1,
+          effective,
+          parents,
+        )
         self.active.remove(name)
       }
       InlineFragmentSelection(fragment) => {
         let at = source.at(fragment.position)
         self.validate_selection_directives(source, fragment.directives)
-        if fragment.type_condition is Some(On(condition)) && condition != owner {
-          raise Invalid(at, "inapplicable fragment type: \{condition}")
+        let (scope, effective) = match fragment.type_condition {
+          Some(On(condition)) =>
+            (condition, self.visit_condition(owner, condition, path, at, scope))
+          None => (owner, scope)
         }
-        self.visit(owner, source, fragment.selection_set, path, depth + 1)
+        self.visit(
+          scope,
+          source,
+          fragment.selection_set,
+          path,
+          depth + 1,
+          effective,
+          parents,
+        )
       }
     }
   }
@@ -323,9 +367,9 @@ pub fn analyze_upgrade(
   let changes = Map([])
   let argument_changes = Map([])
   let ordered = []
-  for owner, fields in old.objects {
+  for owner, fields in old.fields {
     for name, field in fields {
-      let candidate = match next.objects.get(owner) {
+      let candidate = match next.fields.get(owner) {
         Some(fields) => fields.get(name)
         None => None
       }
@@ -362,6 +406,7 @@ pub fn analyze_upgrade(
       ordered.push(change)
     }
   }
+  let abstract_changes = abstract_changes(old, next, ordered)
   let names = Set([])
   for client in clients {
     if client.name == "" || names.contains(client.name) {
@@ -394,6 +439,7 @@ pub fn analyze_upgrade(
         schema: old,
         proposed: next,
         argument_changes,
+        abstract_changes,
         catalog,
         changes,
         client: client.name,
@@ -406,7 +452,15 @@ pub fn analyze_upgrade(
         used_variables: Set([]),
         budget: 100000,
       }
-      walk.visit(old.root, file, query.selection_set, [], 0)
+      walk.visit(
+        old.root,
+        file,
+        query.selection_set,
+        [],
+        0,
+        walk.new_scope(old.root),
+        [],
+      )
       for name, definition in variables {
         if !walk.used_variables.contains(name) {
           raise Invalid(file.at(definition.position), "unused variable \{name}")
