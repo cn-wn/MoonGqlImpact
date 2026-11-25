@@ -157,20 +157,19 @@ fn execute(
   let analysis = @impact.analyze_upgrade_with_coverage(
     baseline, proposed, clients,
   )
-  let report = analysis.report
   if markdown {
-    println(report.to_markdown())
+    println(analysis.to_markdown())
   } else {
     println(analysis.to_json().stringify())
   }
   let blocks = match gate {
     Some(gate) =>
-      report.blocks(
+      analysis.blocks(
         observed_only~,
         severities=gate.severities,
         reason_codes=gate.reason_codes,
       )
-    None => report.blocks(observed_only~)
+    None => analysis.blocks(observed_only~)
   }
   if blocks {
     1

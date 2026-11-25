@@ -16,12 +16,24 @@ pub(all) struct ClientCoverage {
 }
 
 ///|
-/// An analysis result that keeps the original report and the catalog coverage.
+/// A baseline-valid operation rejected by the proposed schema's static rules.
+#derive(ToJson, FromJson, Eq, Debug)
+pub struct OperationRejection {
+  client : String
+  operation : String
+  location : Location
+  message : String
+  reason : ChangeReason
+}
+
+///|
+/// The schema changes and catalog evidence for an upgrade.
 /// Its JSON representation adds format_version and coverage alongside changes.
 #derive(Eq, Debug)
 pub struct AnalyzedUpgrade {
   report : Report
   coverage : Array[ClientCoverage]
+  proposed_rejections : Array[OperationRejection]?
 }
 
 ///|
@@ -29,13 +41,15 @@ let report_format_version : Int32 = 1
 
 ///|
 pub impl ToJson for AnalyzedUpgrade with fn to_json(self) {
-  Json::object(
-    Map([
-      ("format_version", ToJson::to_json(report_format_version)),
-      ("changes", ToJson::to_json(self.report.changes)),
-      ("coverage", ToJson::to_json(self.coverage)),
-    ]),
-  )
+  let fields = Map([
+    ("format_version", ToJson::to_json(report_format_version)),
+    ("changes", ToJson::to_json(self.report.changes)),
+    ("coverage", ToJson::to_json(self.coverage)),
+  ])
+  if self.proposed_rejections is Some(rejections) {
+    fields["proposed_rejections"] = ToJson::to_json(rejections)
+  }
+  Json::object(fields)
 }
 
 ///|
@@ -54,7 +68,15 @@ pub impl @json.FromJson for AnalyzedUpgrade with fn from_json(value, context) {
     entries,
     path=context.add_key("coverage"),
   )
-  { report, coverage, }
+  let proposed_rejections : Array[OperationRejection]? = if value
+    is { "proposed_rejections": rejections, .. } {
+    Some(
+      @json.from_json(rejections, path=context.add_key("proposed_rejections")),
+    )
+  } else {
+    None
+  }
+  { report, coverage, proposed_rejections, }
 }
 
 ///|
@@ -92,3 +114,15 @@ pub extend AnalyzedUpgrade with Eq::{equal, not_equal}
 
 ///|
 pub extend AnalyzedUpgrade with @debug.Debug::{to_repr}
+
+///|
+pub extend OperationRejection with ToJson::{to_json}
+
+///|
+pub extend OperationRejection with @json.FromJson::{from_json}
+
+///|
+pub extend OperationRejection with Eq::{equal, not_equal}
+
+///|
+pub extend OperationRejection with @debug.Debug::{to_repr}

@@ -186,7 +186,7 @@ fn Walk::visit_condition(
     before
   }
   for name in conditions {
-    guard self.abstract_changes.get(name) is Some(change) else { continue }
+    guard self.changes.abstracts.get(name) is Some(change) else { continue }
     let old_types = self.schema.possible[name]
     let new_types = self.proposed.possible.get(name).unwrap_or(Set([]))
     let impacted = []
@@ -227,7 +227,7 @@ fn Walk::observe_member_addition(
   path : Array[String],
   at : Location,
 ) -> Unit {
-  if self.abstract_changes.get(name) is Some(change) &&
+  if self.changes.abstracts.get(name) is Some(change) &&
     change.reasons.unwrap().any(reason => reason.code == AbstractMemberAdded) {
     self.record_impact(change, path.join("."), path, at, [AbstractMemberAdded])
   }

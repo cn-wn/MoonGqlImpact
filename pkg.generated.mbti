@@ -22,11 +22,14 @@ pub(all) suberror AnalysisError {
 pub struct AnalyzedUpgrade {
   report : Report
   coverage : Array[ClientCoverage]
+  proposed_rejections : Array[OperationRejection]?
 }
+pub fn AnalyzedUpgrade::blocks(Self, observed_only? : Bool, severities? : Array[Severity], reason_codes? : Array[ReasonCode]) -> Bool
 pub fn AnalyzedUpgrade::equal(Self, Self) -> Bool
 pub fn AnalyzedUpgrade::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
 pub fn AnalyzedUpgrade::not_equal(Self, Self) -> Bool
 pub fn AnalyzedUpgrade::to_json(Self) -> @json.Json
+pub fn AnalyzedUpgrade::to_markdown(Self) -> String
 pub fn AnalyzedUpgrade::to_repr(Self) -> @debug.Repr
 pub impl @json.FromJson for AnalyzedUpgrade
 pub impl @json.ToJson for AnalyzedUpgrade
@@ -111,6 +114,20 @@ pub fn OperationCoverage::to_json(Self) -> @json.Json
 pub fn OperationCoverage::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
+pub struct OperationRejection {
+  client : String
+  operation : String
+  location : Location
+  message : String
+  reason : ChangeReason
+}
+pub fn OperationRejection::equal(Self, Self) -> Bool
+pub fn OperationRejection::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn OperationRejection::not_equal(Self, Self) -> Bool
+pub fn OperationRejection::to_json(Self) -> @json.Json
+pub fn OperationRejection::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)
 pub(all) enum ReasonCode {
   FieldRemoved
   OutputTypeChanged
@@ -134,6 +151,7 @@ pub(all) enum ReasonCode {
   InputFieldTypeChanged
   InputFieldDefaultChanged
   InputVariableValueMayBreak
+  ProposedOperationRejected
 }
 pub fn ReasonCode::equal(Self, Self) -> Bool
 pub fn ReasonCode::not_equal(Self, Self) -> Bool

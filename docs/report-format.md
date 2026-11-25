@@ -23,6 +23,10 @@ The native CLI writes a versioned JSON report for exit **0** or **1**. Exit **2*
 
 `changes` keeps the existing change and impact representation. `coverage` lists analyzed clients in registration order. Each entry includes all supplied source paths, including fragment-only files, and every baseline query checked for that client, including queries without findings. Locations use one-based lines and columns. An anonymous query uses `<anonymous>`. Schema-only analysis produces an empty `coverage` array. Coverage describes the supplied catalog and does not include unregistered clients or runtime variable values.
 
+Reports produced by the current checker include `proposed_rejections`. It lists baseline-valid operations rejected by the proposed schema, with client, operation, source location, first validation diagnostic, and the breaking reason `ProposedOperationRejected`. An empty array means every registered operation passed static validation of both snapshots. Earlier version-1 reports omit this field and carry no proposed validation result. A schema-only run checks no operations.
+
+Use `AnalyzedUpgrade::blocks` to evaluate both schema changes and operation rejections. The original `Report::blocks` evaluates the schema changes. Static acceptance leaves input coercion changes and response contract findings in `changes`.
+
 ## Compatibility
 
 - A report without `format_version` uses the legacy `changes` format. Its client coverage is unknown.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Validate registered queries against both snapshots and report changes from new argument and input field defaults.
 - Version the CLI JSON report and record the analyzed client, source, and operation coverage.
 - Load client catalogs and gate policy from a checked-in JSON configuration.
 - Analyze nested input objects and extensions, with field-level evidence for validation failures, runtime variable risks, and changed defaults.

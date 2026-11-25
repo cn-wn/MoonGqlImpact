@@ -22,8 +22,10 @@ let oracle : String =
   #|  .filter(([, document]) => graphql.validate(schema, document).length > 0)
   #|  .map(([name]) => name).sort();
   #|const variables = graphql.getOperationAST(documents.Runtime).variableDefinitions;
-  #|const accepts = (schema, value) =>
-  #|  !graphql.getVariableValues(schema, variables, { filter: value }).errors;
+  #|const coerce = (schema, value) =>
+  #|  graphql.getVariableValues(schema, variables, { filter: value });
+  #|const accepts = (schema, value) => !coerce(schema, value).errors;
+  #|const valid = {rules: [{status: 'READY'}]};
   #|console.log(JSON.stringify({
   #|  baseline_invalid: invalid(oldSchema),
   #|  proposed_invalid: invalid(newSchema),
@@ -31,6 +33,9 @@ let oracle : String =
   #|    accepts(newSchema, {rules: [{status: null}]})],
   #|  valid_runtime: [accepts(oldSchema, {rules: [{status: 'READY'}]}),
   #|    accepts(newSchema, {rules: [{status: 'READY'}]})],
+  #|  defaulted_input: [coerce(oldSchema, valid).coerced.filter.maxCount ?? null,
+  #|    coerce(newSchema, valid).coerced.filter.maxCount],
+  #|  singleton_list: coerce(newSchema, {rules: {status: 'READY'}}).coerced.filter.rules.length,
   #|  invalid_merge: graphql.validate(oldSchema, graphql.parse(read(invalidMerge))).length > 0,
   #|}));
 
@@ -50,6 +55,8 @@ async fn verify(package_dir : String) -> Unit {
     "proposed_invalid": invalid,
     "nullable_runtime": [true, false],
     "valid_runtime": [true, true],
+    "defaulted_input": [Null, 5],
+    "singleton_list": 1,
     "invalid_merge": true,
     ..
   } else {
@@ -67,33 +74,36 @@ async fn verify(package_dir : String) -> Unit {
         "reasons": [{ "code": "OutputNullabilityWeakened", .. }],
         "impacts": output_impacts, ..
       },
-      { "coordinate": "Result", "impacts": fragment_impacts, .. },
+      { "coordinate": "Result", .. },
       { "coordinate": "Rule.status", "impacts": input_impacts, .. },
-    ], ..
+      { "coordinate": "BookFilter.maxCount", "impacts": default_impacts, .. },
+    ], "proposed_rejections": rejections, ..
   } else {
     fail("unexpected upgrade report: " + actual.stdout())
   }
-  let static_invalid = Set([])
-  for group in [input_impacts, fragment_impacts] {
-    let hits : Array[Json] = @json.from_json(group)
-    for hit in hits {
-      guard hit is { "operation": String(name), "reason_codes": codes, .. } else {
-        fail("invalid impact row")
-      }
-      let codes : Array[String] = @json.from_json(codes)
-      if name == "Runtime" {
-        assert_eq(codes, ["InputVariableValueMayBreak"])
-      }
-      if codes.contains("InputFieldTypeChanged") || codes.contains("FragmentNoLongerPossible") {
-        assert_true(static_invalid.add_and_check(name))
-      }
+  let observed : Array[Json] = @json.from_json(rejections)
+  let invalid_names = []
+  for row in observed {
+    guard row is {
+      "operation": String(name),
+      "reason": { "code": "ProposedOperationRejected", "severity": "Breaking", .. },
+      ..
+    } else {
+      fail("expected a static rejection")
     }
+    invalid_names.push(name)
   }
+  assert_eq(invalid_names.length(), ref_invalid.length())
+  assert_true(ref_invalid.all(name => invalid_names.contains(name)))
   let inputs : Array[Json] = @json.from_json(input_impacts)
-  assert_true(inputs.any(hit => hit is { "operation": "Runtime", .. }))
+  assert_true(inputs.any(hit => hit is {
+    "operation": "Runtime", "reason_codes": ["InputVariableValueMayBreak"], ..
+  }))
   assert_false(inputs.any(hit => hit is { "operation": "Safe" | "Merge", .. }))
-  assert_true(static_invalid.length() == ref_invalid.length())
-  assert_true(ref_invalid.all(name => static_invalid.contains(name)))
+  let defaults : Array[Json] = @json.from_json(default_impacts)
+  assert_true(defaults.any(hit => hit is {
+    "operation": "Safe", "reason_codes": ["InputFieldDefaultChanged"], ..
+  }))
   let outputs : Array[Json] = @json.from_json(output_impacts)
   assert_true(outputs.any(hit => hit is { "operation": "Safe", .. }))
   let rejected = @shell.Cmd("moon", [..prefix, old, next, "web", invalid_merge]).output()

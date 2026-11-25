@@ -11,15 +11,20 @@ fn Argument::required(self : Argument) -> Bool {
 }
 
 ///|
+fn Schema::is_input_type(self : Schema, name : String) -> Bool {
+  builtin(name) ||
+  self.enums.contains(name) ||
+  self.input_objects.contains(name)
+}
+
+///|
 fn Schema::check_input_type(
   self : Schema,
   kind : @gql.GqlType,
   at : Location,
 ) -> Unit raise AnalysisError {
   let name = named(kind)
-  if !builtin(name) &&
-    !self.enums.contains(name) &&
-    !self.input_objects.contains(name) {
+  if !self.is_input_type(name) {
     raise Unsupported(
       at,
       "unsupported input type: \{name}; use built-in scalars, enums, lists or input objects",
@@ -383,7 +388,12 @@ fn argument_reasons(
         reasons.push(ArgumentDefaultChanged)
       }
     }
-    (None, Some(b)) => if b.required() { reasons.push(RequiredArgumentAdded) }
+    (None, Some(b)) =>
+      if b.required() {
+        reasons.push(RequiredArgumentAdded)
+      } else if b.default_value is Some(_) {
+        reasons.push(ArgumentDefaultChanged)
+      }
     (None, None) => ()
   }
   reasons

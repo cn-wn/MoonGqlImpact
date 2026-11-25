@@ -291,12 +291,11 @@ fn Walk::observe_input_variable(
       continue
     }
     self.input_step(site)
-    if self.input_changes.get(name) is Some(diffs) {
+    if self.changes.inputs.get(name) is Some(diffs) {
       for diff in diffs {
         let codes = []
         if diff.reasons.contains(InputFieldDefaultChanged) &&
-          diff.old is Some(field) &&
-          !field.required() {
+          !(diff.old is Some(field) && field.required()) {
           codes.push(InputFieldDefaultChanged)
         }
         if diff.reasons.any(code => code.reason().severity == Breaking) {
@@ -373,7 +372,7 @@ fn Walk::observe_input(
         return
       }
       let supplied = Map(entries)
-      if self.input_changes.get(name) is Some(diffs) {
+      if self.changes.inputs.get(name) is Some(diffs) {
         for diff in diffs {
           let reasons = self.affected_input_field_reasons(
             diff,

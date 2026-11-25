@@ -26,8 +26,22 @@ fn Location::report_text(self : Location) -> String {
 /// Render every change and impact as an escaped, deterministic Markdown report.
 /// Ordering follows the report. Unobserved changes are included.
 pub fn Report::to_markdown(self : Report) -> String {
+  self.render_markdown([])
+}
+
+///|
+/// Render the change report and any proposed-schema validation diagnostics.
+pub fn AnalyzedUpgrade::to_markdown(self : AnalyzedUpgrade) -> String {
+  self.report.render_markdown(self.proposed_rejections.unwrap_or([]))
+}
+
+///|
+fn Report::render_markdown(
+  self : Report,
+  rejections : Array[OperationRejection],
+) -> String {
   let lines = ["# GraphQL upgrade impact", ""]
-  if self.changes.is_empty() {
+  if self.changes.is_empty() && rejections.is_empty() {
     lines.push("No contract regressions in the supported profile.")
   }
   for change in self.changes {
@@ -73,6 +87,16 @@ pub fn Report::to_markdown(self : Report) -> String {
         impact.selection.report_text() +
         "</code>" +
         impact_reason_label(impact),
+      )
+    }
+    lines.push("")
+  }
+  if !rejections.is_empty() {
+    lines.push("## Operations rejected by the proposed schema")
+    lines.push("")
+    for rejection in rejections {
+      lines.push(
+        "- <code>\{report_text(rejection.client)}</code> / <code>\{report_text(rejection.operation)}</code> at <code>\{rejection.location.report_text()}</code> — \{report_text(rejection.message)} (\{reason_label(rejection.reason)})",
       )
     }
     lines.push("")

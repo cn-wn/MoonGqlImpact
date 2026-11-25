@@ -123,14 +123,19 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
 }
 
 ///|
+priv struct ContractChanges {
+  arguments : Map[String, Array[ArgumentDiff]]
+  inputs : Map[String, Array[ArgumentDiff]]
+  abstracts : Map[String, Change]
+  outputs : Map[String, Change]
+}
+
+///|
 priv struct Walk {
   schema : Schema
   proposed : Schema
-  argument_changes : Map[String, Array[ArgumentDiff]]
-  input_changes : Map[String, Array[ArgumentDiff]]
-  abstract_changes : Map[String, Change]
+  changes : ContractChanges
   catalog : Catalog
-  changes : Map[String, Change]
   client : String
   operation : String
   seen_fragments : Set[String]
@@ -249,7 +254,7 @@ fn Walk::visit(
         }
         guard self.schema.fields.get(owner) is Some(fields) &&
           fields.get(field.name) is Some(old) else {
-          raise Invalid(at, "baseline field does not exist: \{coordinate}")
+          raise Invalid(at, "field does not exist: \{coordinate}")
         }
         self.check_response(
           key,
@@ -257,7 +262,7 @@ fn Walk::visit(
           at,
         )
         self.validate_arguments(old, arguments, at)
-        if !self.input_changes.is_empty() &&
+        if !self.changes.inputs.is_empty() &&
           self.proposed.fields.get(owner) is Some(fields) &&
           fields.get(field.name) is Some(proposed) {
           let site = { key, path: next_path, at, }
@@ -275,7 +280,7 @@ fn Walk::visit(
             }
           }
         }
-        if self.argument_changes.get(coordinate) is Some(diffs) {
+        if self.changes.arguments.get(coordinate) is Some(diffs) {
           for diff in diffs {
             let reasons = self.affected_argument_reasons(
               diff,
@@ -293,7 +298,7 @@ fn Walk::visit(
             at, "composite fields require a selection set and leaf fields forbid it",
           )
         }
-        if self.changes.get(coordinate) is Some(change) {
+        if self.changes.outputs.get(coordinate) is Some(change) {
           self.record_impact(
             change,
             key,
@@ -369,22 +374,97 @@ fn Walk::visit(
 }
 
 ///|
+fn Walk::new(
+  schema : Schema,
+  proposed : Schema,
+  changes : ContractChanges,
+  catalog : Catalog,
+  seen_fragments : Set[String],
+  client~ : String,
+  operation~ : String,
+) -> Walk {
+  {
+    schema,
+    proposed,
+    changes,
+    catalog,
+    client,
+    operation,
+    seen_fragments,
+    active: Set([]),
+    response_fields: Map([]),
+    reported: Map([]),
+    variables: Map([]),
+    used_variables: Set([]),
+    budget: 100000,
+  }
+}
+
+///|
+fn Walk::validate_operation(
+  self : Walk,
+  file : Source,
+  query : @gql.Query,
+  validate_proposed~ : Bool = false,
+) -> Unit raise AnalysisError {
+  let constants = Map([])
+  for definition in query.variable_definitions {
+    let at = file.at(definition.position)
+    if self.variables.contains(definition.name) {
+      raise Invalid(at, "duplicate variable: \{definition.name}")
+    }
+    let type_name = named(definition.var_type)
+    if validate_proposed &&
+      !self.schema.is_input_type(type_name) &&
+      !self.schema.scalars.contains(type_name) {
+      raise Invalid(
+        at,
+        "\{type_name} is not an input type in the proposed schema",
+      )
+    }
+    self.schema.check_input_type(definition.var_type, at)
+    if definition.default_value is Some(value) &&
+      !self.schema.value_fits(definition.var_type, value, constants) {
+      raise Invalid(at, "invalid default value for variable \{definition.name}")
+    }
+    self.variables[definition.name] = definition
+  }
+  let root = self.schema.root
+  self.visit(root, file, query.selection_set, [], 0, self.new_scope(root), [])
+  for name, definition in self.variables {
+    if !self.used_variables.contains(name) {
+      raise Invalid(file.at(definition.position), "unused variable \{name}")
+    }
+  }
+}
+
+///|
 /// Compare supported input and output contracts and locate affected selections in baseline-valid queries.
 pub fn analyze_upgrade(
   baseline : Source,
   proposed : Source,
   clients : Array[Client],
 ) -> Report raise AnalysisError {
-  analyze_upgrade_with_coverage(baseline, proposed, clients).report
+  analyze(baseline, proposed, clients, validate_proposed=false).report
 }
 
 ///|
-/// Analyze the same upgrade as analyze_upgrade and record every checked operation.
+/// Compare contracts and validate registered operations against both snapshots.
 /// An empty client list yields a schema-only report with empty coverage.
 pub fn analyze_upgrade_with_coverage(
   baseline : Source,
   proposed : Source,
   clients : Array[Client],
+) -> AnalyzedUpgrade raise AnalysisError {
+  analyze(baseline, proposed, clients, validate_proposed=true)
+}
+
+///|
+fn analyze(
+  baseline : Source,
+  proposed : Source,
+  clients : Array[Client],
+  validate_proposed~ : Bool,
 ) -> AnalyzedUpgrade raise AnalysisError {
   let old = index(baseline)
   let next = index(proposed)
@@ -438,6 +518,19 @@ pub fn analyze_upgrade_with_coverage(
   }
   let abstract_changes = abstract_changes(old, next, ordered)
   let input_changes = input_object_diffs(old, next, ordered)
+  let contract_changes = {
+    arguments: argument_changes,
+    inputs: input_changes,
+    abstracts: abstract_changes,
+    outputs: changes,
+  }
+  let no_changes : ContractChanges = {
+    arguments: Map([]),
+    inputs: Map([]),
+    abstracts: Map([]),
+    outputs: Map([]),
+  }
+  let proposed_rejections = []
   let names = Set([])
   let coverage = []
   for client in clients {
@@ -452,52 +545,36 @@ pub fn analyze_upgrade_with_coverage(
     let seen_fragments = Set([])
     let analyzed_operations = []
     for operation, (file, query) in catalog.operations {
-      let variables = Map([])
-      for definition in query.variable_definitions {
-        let at = file.at(definition.position)
-        if variables.contains(definition.name) {
-          raise Invalid(at, "duplicate variable: \{definition.name}")
-        }
-        old.check_input_type(definition.var_type, at)
-        if definition.default_value is Some(value) &&
-          !old.value_fits(definition.var_type, value, Map([])) {
-          raise Invalid(
-            at,
-            "invalid default value for variable \{definition.name}",
-          )
-        }
-        variables[definition.name] = definition
-      }
-      let walk = {
-        schema: old,
-        proposed: next,
-        argument_changes,
-        input_changes,
-        abstract_changes,
+      let walk = Walk::new(
+        old,
+        next,
+        contract_changes,
         catalog,
-        changes,
-        client: client.name,
-        operation,
         seen_fragments,
-        active: Set([]),
-        response_fields: Map([]),
-        reported: Map([]),
-        variables,
-        used_variables: Set([]),
-        budget: 100000,
-      }
-      walk.visit(
-        old.root,
-        file,
-        query.selection_set,
-        [],
-        0,
-        walk.new_scope(old.root),
-        [],
+        client=client.name,
+        operation~,
       )
-      for name, definition in variables {
-        if !walk.used_variables.contains(name) {
-          raise Invalid(file.at(definition.position), "unused variable \{name}")
+      walk.validate_operation(file, query)
+      if validate_proposed {
+        let check = Walk::new(
+          next,
+          next,
+          no_changes,
+          catalog,
+          Set([]),
+          client=client.name,
+          operation~,
+        )
+        check.validate_operation(file, query, validate_proposed=true) catch {
+          Invalid(location, message) =>
+            proposed_rejections.push({
+              client: client.name,
+              operation,
+              location,
+              message,
+              reason: ProposedOperationRejected.reason(),
+            })
+          error => raise error
         }
       }
       analyzed_operations.push({
@@ -516,7 +593,15 @@ pub fn analyze_upgrade_with_coverage(
       operations: analyzed_operations,
     })
   }
-  { report: { changes: ordered, }, coverage, }
+  {
+    report: { changes: ordered, },
+    coverage,
+    proposed_rejections: if validate_proposed {
+      Some(proposed_rejections)
+    } else {
+      None
+    },
+  }
 }
 
 ///|

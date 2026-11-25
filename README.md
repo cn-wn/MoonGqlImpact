@@ -43,7 +43,7 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 | Level | Reason codes |
 | --- | --- |
-| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible` |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected` |
 | `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded` |
 | `notice` | `ScalarSpecificationChanged` |
 
@@ -51,7 +51,7 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 Without a filter, the gate considers every reported change. With `--observed-only`, a selected reason must apply to at least one registered selection. An invalid category or input returns **2**. JSON includes `reasons` with a code and severity for each change, plus `reason_codes` for each impact. Markdown displays the same breakdown. Library callers can use `Report::blocks` with severity or reason-code filters. Older reports without reason metadata remain readable and are treated conservatively by the gate.
 
-CLI JSON includes a format version and lists the client operations actually analyzed, including operations with no findings. See the [JSON report contract](docs/report-format.md) for coverage semantics and reason-code compatibility.
+CLI JSON includes a format version and lists the client operations actually analyzed, including operations with no findings. The checker validates each registered query against both snapshots. A baseline-valid query rejected by the proposed schema is a breaking finding with its own source diagnostic. See the [JSON report contract](docs/report-format.md) for coverage semantics and reason-code compatibility.
 
 ## Check an argument upgrade
 

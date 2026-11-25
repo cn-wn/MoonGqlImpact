@@ -39,6 +39,7 @@ pub(all) enum ReasonCode {
   InputFieldTypeChanged
   InputFieldDefaultChanged
   InputVariableValueMayBreak
+  ProposedOperationRejected
 }
 
 ///|
@@ -77,7 +78,8 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | InputFieldRemoved
     | RequiredInputFieldAdded
     | InputFieldBecameRequired
-    | InputFieldTypeChanged => Breaking
+    | InputFieldTypeChanged
+    | ProposedOperationRejected => Breaking
     OutputEnumValueAdded
     | OutputEnumValueRemoved
     | ArgumentDefaultChanged
@@ -168,4 +170,23 @@ fn output_reasons(
     }
   }
   reasons
+}
+
+///|
+/// Apply the gate to schema changes and baseline-valid operations that now fail validation.
+pub fn AnalyzedUpgrade::blocks(
+  self : AnalyzedUpgrade,
+  observed_only~ : Bool = false,
+  severities? : Array[Severity],
+  reason_codes? : Array[ReasonCode],
+) -> Bool {
+  self.report.blocks(observed_only~, severities?, reason_codes?) ||
+  (
+    self.proposed_rejections is Some([_, ..]) &&
+    (
+      (severities is None && reason_codes is None) ||
+      severities.unwrap_or([]).contains(Breaking) ||
+      reason_codes.unwrap_or([]).contains(ProposedOperationRejected)
+    )
+  )
 }
