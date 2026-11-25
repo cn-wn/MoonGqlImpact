@@ -175,9 +175,35 @@ async fn argument_demo() -> Unit {
 }
 
 ///|
+async fn mutation_demo() -> Unit {
+  let root = "examples/mutations/"
+  let run = @shell.Cmd("moon", [
+    "run", "cmd/check", "--target", "native", "--", "--observed-only", "--fail-on=breaking",
+    root + "old.graphql", root + "new.graphql", "issue-client", root + "operations.graphql",
+  ]).output()
+  assert_eq(run.exit_code(), 1)
+  guard @json.parse(run.stdout()) is {
+    "changes": [{
+      "coordinate": "CreateIssueInput.labelIds",
+      "impacts": [{ "operation": "OpenWithoutLabels", "response_path": ["added"], .. }],
+      ..
+    }],
+    "coverage": [{ "operations": [
+      { "name": "ReadIssue", .. }, { "name": "OpenWithLabels", .. }, { "name": "OpenWithoutLabels", .. },
+    ], .. }],
+    "proposed_rejections": [{ "operation": "OpenWithoutLabels", .. }],
+    ..
+  } else {
+    fail("unexpected mutation report: " + run.stdout())
+  }
+  println("Mixed query and mutation CLI demo passed")
+}
+
+///|
 fn main {
   @async.run_async_main(async fn() {
     demo()
     argument_demo()
+    mutation_demo()
   })
 }

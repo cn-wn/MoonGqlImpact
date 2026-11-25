@@ -34,6 +34,7 @@ priv struct IndexedField {
 ///|
 priv struct Schema {
   root : String
+  mutation_root : (String, Location)?
   input_objects : Map[String, InputObject]
   enums : Map[String, Array[String]]
   scalars : Map[String, String?]
@@ -176,6 +177,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   let enum_extensions = []
   let extensions = []
   let mut root = None
+  let mut mutation_root = None
   for definition in doc.definitions {
     match definition {
       SchemaDef(schema) => {
@@ -184,14 +186,14 @@ fn index(source : Source) -> Schema raise AnalysisError {
           raise Invalid(at, "duplicate schema definition")
         }
         guard schema.query is Some(name) &&
-          schema.mutation is None &&
           schema.subscription is None &&
           schema.directives.is_empty() else {
           raise Unsupported(
-            at, "only a query root without directives is supported",
+            at, "schema requires a query root and supports a mutation root without directives",
           )
         }
         root = Some(name)
+        mutation_root = schema.mutation.map(name => (name, at))
       }
       TypeDef(ScalarTypeDef(scalar)) => {
         let at = source.at(scalar.position)
@@ -421,15 +423,35 @@ fn index(source : Source) -> Schema raise AnalysisError {
     }
     add_type_names(union.members, extension.types, at)
   }
-  if root is None &&
-    (declarations.contains("Mutation") || declarations.contains("Subscription")) {
-    raise Unsupported(
-      start, "implicit mutation and subscription roots are outside the output profile",
-    )
+  if root is None {
+    if declarations.contains("Subscription") {
+      raise Unsupported(
+        start, "implicit subscription roots are outside the supported profile",
+      )
+    }
+    let mutation = "Mutation"
+    match declarations.get(mutation) {
+      Some(declaration) => mutation_root = Some((mutation, declaration.at))
+      None =>
+        if scalars.contains(mutation) ||
+          enums.contains(mutation) ||
+          unions.contains(mutation) ||
+          input_objects.contains(mutation) {
+          raise Invalid(start, "implicit mutation root must be an object")
+        }
+    }
   }
   let root = root.unwrap_or("Query")
   if !declarations.contains(root) || interfaces.contains(root) {
     raise Invalid(start, "query root object \{root} is missing")
+  }
+  if mutation_root is Some((name, at)) {
+    if !declarations.contains(name) || interfaces.contains(name) {
+      raise Invalid(at, "mutation root object \{name} is missing")
+    }
+    if name == root {
+      raise Invalid(at, "query and mutation roots must be different objects")
+    }
   }
   let possible = build_possible_types(declarations, interfaces, unions)
   let parents = Map([])
@@ -438,6 +460,7 @@ fn index(source : Source) -> Schema raise AnalysisError {
   }
   let schema = {
     root,
+    mutation_root,
     input_objects,
     fields: fields_by_type,
     parents,

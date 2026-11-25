@@ -54,7 +54,9 @@ fn Report::render_markdown(
       Some(kind) =>
         lines.push("- Proposed type <code>" + report_text(kind) + "</code>")
       None =>
-        if change.coordinate.has_suffix(":)") {
+        if change.coordinate == "schema.mutation" {
+          lines.push("- Mutation root removed")
+        } else if change.coordinate.has_suffix(":)") {
           lines.push("- Argument removed")
         } else if change.coordinate.contains(".") {
           lines.push("- Field removed")

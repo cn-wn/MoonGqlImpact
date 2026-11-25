@@ -40,6 +40,7 @@ pub(all) enum ReasonCode {
   InputFieldDefaultChanged
   InputVariableValueMayBreak
   ProposedOperationRejected
+  MutationRootRemoved
 }
 
 ///|
@@ -79,7 +80,8 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | RequiredInputFieldAdded
     | InputFieldBecameRequired
     | InputFieldTypeChanged
-    | ProposedOperationRejected => Breaking
+    | ProposedOperationRejected
+    | MutationRootRemoved => Breaking
     OutputEnumValueAdded
     | OutputEnumValueRemoved
     | ArgumentDefaultChanged

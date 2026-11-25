@@ -34,9 +34,70 @@ pub(all) struct Report {
 }
 
 ///|
+priv enum OperationKind {
+  Query
+  Mutation
+}
+
+///|
+priv struct Operation {
+  kind : OperationKind
+  position : @gql.Pos
+  name : String?
+  variable_definitions : Array[@gql.VariableDefinition]
+  directives : Array[@gql.Directive]
+  selection_set : @gql.SelectionSet
+}
+
+///|
+fn operation_node(
+  ast : @gql.OperationDefinition,
+  source : Source,
+) -> Operation raise AnalysisError {
+  match ast {
+    SelectionSetOperation(selection_set) =>
+      {
+        kind: Query,
+        position: selection_set.span.0,
+        name: None,
+        variable_definitions: [],
+        directives: [],
+        selection_set,
+      }
+    QueryOperation(
+      { position, name, variable_definitions, directives, selection_set, },
+    ) =>
+      {
+        kind: Query,
+        position,
+        name,
+        variable_definitions,
+        directives,
+        selection_set,
+      }
+    MutationOperation(
+      { position, name, variable_definitions, directives, selection_set, },
+    ) =>
+      {
+        kind: Mutation,
+        position,
+        name,
+        variable_definitions,
+        directives,
+        selection_set,
+      }
+    SubscriptionOperation(subscription) =>
+      raise Unsupported(
+        source.at(subscription.position),
+        "subscription operations are outside the supported profile",
+      )
+  }
+}
+
+///|
 priv struct Catalog {
   fragments : Map[String, (Source, @gql.FragmentDefinition)]
-  operations : Map[String, (Source, @gql.Query)]
+  operations : Map[String, (Source, Operation)]
 }
 
 ///|
@@ -62,19 +123,6 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
       )
     }
     for def in doc.definitions {
-      let def : @gql.QueryDefinition = match def {
-        OperationDefinition(SelectionSetOperation(selection_set)) =>
-          OperationDefinition(
-            QueryOperation({
-              position: selection_set.span.0,
-              name: None,
-              variable_definitions: [],
-              directives: [],
-              selection_set,
-            }),
-          )
-        _ => def
-      }
       match def {
         FragmentDefinition(fragment) => {
           if fragments.contains(fragment.name) {
@@ -85,7 +133,8 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
           }
           fragments[fragment.name] = (source, fragment)
         }
-        OperationDefinition(QueryOperation(query)) => {
+        OperationDefinition(ast) => {
+          let query = operation_node(ast, source)
           let at = source.at(query.position)
           guard query.directives.is_empty() else {
             raise Unsupported(
@@ -98,25 +147,20 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
           }
           operations[name] = (source, query)
         }
-        _ =>
-          raise Unsupported(
-            { path: source.path, line: 1, column: 1, },
-            "only query operations are supported",
-          )
       }
     }
   }
   if operations.is_empty() {
     raise Invalid(
       { path: client.name, line: 1, column: 1, },
-      "client must define a query",
+      "client must define a query or mutation",
     )
   }
   if operations.length() > 1 &&
     operations.get("<anonymous>") is Some((file, query)) {
     raise Invalid(
       file.at(query.position),
-      "an anonymous query must be the client's only operation",
+      "an anonymous operation must be the client's only operation",
     )
   }
   { fragments, operations, }
@@ -404,7 +448,7 @@ fn Walk::new(
 fn Walk::validate_operation(
   self : Walk,
   file : Source,
-  query : @gql.Query,
+  query : Operation,
   validate_proposed~ : Bool = false,
 ) -> Unit raise AnalysisError {
   let constants = Map([])
@@ -429,7 +473,18 @@ fn Walk::validate_operation(
     }
     self.variables[definition.name] = definition
   }
-  let root = self.schema.root
+  let root = match query.kind {
+    Query => self.schema.root
+    Mutation =>
+      match self.schema.mutation_root {
+        Some((name, _)) => name
+        None =>
+          raise Invalid(
+            file.at(query.position),
+            "schema does not define a mutation root",
+          )
+      }
+  }
   self.visit(root, file, query.selection_set, [], 0, self.new_scope(root), [])
   for name, definition in self.variables {
     if !self.used_variables.contains(name) {
@@ -474,6 +529,13 @@ fn analyze(
       "query root renaming is outside the output profile",
     )
   }
+  if old.mutation_root is Some((before, _)) &&
+    next.mutation_root is Some((after, at)) &&
+    before != after {
+    raise Unsupported(
+      at, "mutation root renaming is outside the supported profile",
+    )
+  }
   let changes = Map([])
   let argument_changes = Map([])
   let ordered = []
@@ -516,6 +578,22 @@ fn analyze(
       ordered.push(change)
     }
   }
+  let removed_mutation_root = if old.mutation_root is Some((name, at)) &&
+    next.mutation_root is None {
+    let change : Change = {
+      coordinate: "schema.mutation",
+      previous_type: name,
+      proposed_type: None,
+      baseline: at,
+      proposed: None,
+      impacts: [],
+      reasons: Some([MutationRootRemoved.reason()]),
+    }
+    ordered.push(change)
+    Some(change)
+  } else {
+    None
+  }
   let abstract_changes = abstract_changes(old, next, ordered)
   let input_changes = input_object_diffs(old, next, ordered)
   let contract_changes = {
@@ -555,6 +633,11 @@ fn analyze(
         operation~,
       )
       walk.validate_operation(file, query)
+      if query.kind is Mutation && removed_mutation_root is Some(change) {
+        walk.record_impact(change, "", [], file.at(query.position), [
+          MutationRootRemoved,
+        ])
+      }
       if validate_proposed {
         let check = Walk::new(
           next,

@@ -152,6 +152,7 @@ pub(all) enum ReasonCode {
   InputFieldDefaultChanged
   InputVariableValueMayBreak
   ProposedOperationRejected
+  MutationRootRemoved
 }
 pub fn ReasonCode::equal(Self, Self) -> Bool
 pub fn ReasonCode::not_equal(Self, Self) -> Bool

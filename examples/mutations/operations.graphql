@@ -1,0 +1,17 @@
+fragment IssueTitle on Issue { display: title }
+
+query ReadIssue($id: ID!) {
+  issue(id: $id) { ...IssueTitle }
+}
+
+mutation OpenWithLabels {
+  added: createIssue(input: { repositoryId: "repo-123", title: "Improve search", labelIds: [] }) {
+    issue { ...IssueTitle }
+  }
+}
+
+mutation OpenWithoutLabels {
+  added: createIssue(input: { repositoryId: "repo-123", title: "Improve search" }) {
+    issue { ...IssueTitle }
+  }
+}

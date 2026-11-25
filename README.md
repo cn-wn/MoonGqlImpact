@@ -43,7 +43,7 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 | Level | Reason codes |
 | --- | --- |
-| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected` |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected`, `MutationRootRemoved` |
 | `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded` |
 | `notice` | `ScalarSpecificationChanged` |
 
@@ -65,6 +65,8 @@ The report identifies `Query.user(id:)`. The mobile operations `EditProfile` and
 
 The [nested input example](examples/input-objects/README.md) checks a tightened field inside a list of input objects. It shows which queries fail validation, which need to review runtime variable values, and where a weaker output guarantee affects otherwise valid queries.
 
+The [mixed read/write example](examples/mutations/README.md) traces a breaking input change through a mutation that shares a fragment with a query.
+
 ## Try a public schema
 
 The [SWAPI case](examples/swapi/README.md) uses the complete upstream Schema and two original example queries at a pinned revision. It verifies a still-compatible query, an affected interface fragment, and a diagnostic for an unsupported query.
@@ -81,7 +83,7 @@ Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values a
 
 ## Supported profile
 
-Query-only SDL with objects, interfaces and unions, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Custom scalar `@specifiedBy(url: "...")` declarations are preserved in reports. Adding, removing or changing their URL is reported as a notice for fields returning that scalar. URLs are compared as text and are never fetched. Other scalar directives are rejected. Executable documents support named queries or a sole anonymous query per client (reported as `<anonymous>`), aliases, the `__typename` meta-field, and named and inline fragments on overlapping object, interface or union types. The core is portable. The CLI reads local UTF-8 files on native targets.
+Query and mutation SDL with objects, interfaces and unions, default or explicit query and mutation roots, built-in and declared custom scalar leaves, and nested list/non-null wrappers. Root renames are rejected. Removing an existing mutation root is reported as a breaking change. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Custom scalar `@specifiedBy(url: "...")` declarations are preserved in reports. Adding, removing or changing their URL is reported as a notice for fields returning that scalar. URLs are compared as text and are never fetched. Other scalar directives are rejected. Executable documents support named queries and mutations or a sole anonymous operation per client (reported as `<anonymous>`), aliases, the `__typename` meta-field, and named and inline fragments on overlapping object, interface or union types. The core is portable. The CLI reads local UTF-8 files on native targets.
 
 Use `extend type` to add fields to an existing object within the same SDL snapshot. Extended fields retain their declaration locations. An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
 
@@ -95,7 +97,7 @@ Input objects can use both input definitions and extensions. The checker validat
 
 Changes to an interface or union list its old and proposed concrete object types. An added concrete type is a risk for registered operations selecting that abstract result. For removals, evidence points to the fragment spread that loses a possible type. `FragmentNoLongerPossible` indicates that the fragment no longer matches at its site, including after narrowing by enclosing fragments. The checker validates interface inheritance and field signatures, union members, and response shape when aliases overlap. Extensions can add object or interface fields, implemented interfaces, union members, and enum values.
 
-The checker rejects custom scalar inputs, directives on input objects and input fields, argument directives, mutations, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects custom scalar inputs, directives on input objects and input fields, argument directives, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and license
 
