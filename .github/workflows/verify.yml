@@ -63,9 +63,19 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           moon check --target native --deny-warn && moon test --target native --deny-warn
-      - name: Run documented Apollo demo
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: '22'
+      - name: Run documented CLI examples
         if: runner.os == 'Linux'
         run: moon run --deny-warn scripts/demo.mbtx
+      - name: Check scale, repeatability and limits
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/scale.mbtx
+      - name: Verify package archive and downstream install
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/release_check.mbtx
 
       - name: Check out the pinned SWAPI fixture
         if: runner.os == 'Linux'
@@ -79,10 +89,6 @@ jobs:
         if: runner.os == 'Linux'
         run: moon run --deny-warn scripts/swapi.mbtx -- swapi-upstream
 
-      - uses: actions/setup-node@v4
-        if: runner.os == 'Linux'
-        with:
-          node-version: '22'
       - name: Install the pinned GraphQL.js reference
         if: runner.os == 'Linux'
         run: npm install --prefix _build/graphql-oracle --no-package-lock --ignore-scripts --no-audit --no-fund graphql@16.11.0

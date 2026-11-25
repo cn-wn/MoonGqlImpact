@@ -1,8 +1,8 @@
 # MoonGqlImpact
 
-MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL query contract upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field, a weakened output type, or a tighter input contract. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
+MoonGqlImpact is an offline MoonBit library and CI tool for GraphQL operation contract upgrades. Compare two SDL snapshots and see which registered client operations rely on a removed field, a weakened output type, or a tighter input contract. A query can remain valid after `[Mission!]!` becomes `[Mission]!`, while generated clients may still assume every item is non-null.
 
-See the [0.1.0 release notes](CHANGELOG.md) and the [checked library example](README.mbt.md).
+See the [0.2.0 release notes](CHANGELOG.md), [package and scale verification](docs/release-validation.md), and the [checked library example](README.mbt.md).
 
 ## Try the Apollo 11 example
 

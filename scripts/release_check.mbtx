@@ -1,0 +1,73 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+let consumer : String =
+  #|///|
+  #|fn main {
+  #|  let before : @impact.Source = {
+  #|    path: "before", text: "input Filter { text: String } type Query { search(f: Filter!): String }",
+  #|  }
+  #|  let after : @impact.Source = {
+  #|    path: "after", text: "input Filter { text: String limit: Int = 5 } type Query { search(f: Filter!): String }",
+  #|  }
+  #|  let result = @impact.analyze_upgrade_with_samples(before, after, [{
+  #|    name: "checkout",
+  #|    sources: [{path: "find.graphql", text: "query Find($f: Filter!) { search(f: $f) }"}],
+  #|  }], [{
+  #|    client: "checkout", operation: "Find", id: "demo", variables: { "f": {} },
+  #|  }]) catch {
+  #|    _ => abort("analysis failed")
+  #|  }
+  #|  guard result.sample_assessments is [{status: CoercionChanged, ..}] else {
+  #|    abort("missing sample evidence")
+  #|  }
+  #|  println("consumer-ok")
+  #|}
+
+///|
+async fn verify() -> Unit {
+  let packaged = @shell.Cmd("moon", ["package"]).output()
+  packaged.check()
+  let archive = "_build/publish/cn-wn-moongqlimpact-0.2.0.zip"
+  let temp = @shell.Cmd("mktemp", ["-d"]).output()
+  temp.check()
+  let root = temp.stdout().trim().to_owned()
+  defer @fs.rmdir(root, recursive=true)
+  let library = root + "/library"
+  let app = root + "/consumer"
+  @fs.mkdir(library)
+  @fs.mkdir(app)
+  let extract = @shell.Cmd("python3", ["-m", "zipfile", "-e", archive, library]).output()
+  extract.check()
+  assert_true(@fs.read_file(library + "/moon.mod").text().contains("version = \"0.2.0\""))
+  let cli = @shell.Cmd("moon", [
+    "-C", library, "run", "cmd/check", "--target", "native", "--release", "--deny-warn", "--",
+    "--config", "examples/variables/check.json",
+  ]).output()
+  assert_eq(cli.exit_code(), 1)
+  guard @json.parse(cli.stdout()) is {
+    "sample_assessments": [{ "status": "VariableRejected", .. }, { "status": "CoercionChanged", .. }, { "status": "Unchanged", .. }], ..
+  } else {
+    fail("packaged CLI did not run its documented sample")
+  }
+  @fs.write_file(root + "/moon.work", "members = [\"library\", \"consumer\"]\n")
+  @fs.write_file(app + "/moon.mod", "name = \"smoke/consumer\"\nversion = \"0.1.0\"\nimport { \"cn-wn/moongqlimpact@0.2.0\" }\n")
+  @fs.write_file(app + "/moon.pkg", "import { \"cn-wn/moongqlimpact\" @impact }\npkgtype(kind: \"executable\")\n")
+  @fs.write_file(app + "/main.mbt", consumer)
+  let downstream = @shell.Cmd("moon", ["-C", app, "run", ".", "--target", "js", "--deny-warn"]).output()
+  downstream.check()
+  assert_eq(downstream.stdout().trim().to_owned(), "consumer-ok")
+  println("0.2.0 archive, unpacked native CLI and independent JavaScript consumer verified")
+}
+
+///|
+fn main {
+  @async.run_async_main(async fn() { verify() })
+}

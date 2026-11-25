@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
+- Verify the release archive with an unpacked native CLI, an independent downstream consumer, and a 1,024-operation workload in CI.
 - Compare offline variable samples between snapshots and support explicit input rules for custom scalars.
 - Analyze query and mutation operations together, including changed write inputs and mutation-root removal.
 - Validate registered queries against both snapshots and report changes from new argument and input field defaults.

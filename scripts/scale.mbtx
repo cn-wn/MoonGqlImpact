@@ -1,0 +1,74 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+async fn scale() -> Unit {
+  let build = @shell.Cmd("moon", [
+    "build", "cmd/check", "--target", "native", "--release", "--deny-warn",
+  ]).output()
+  build.check()
+  let binary = "_build/native/release/build/cmd/check/check.exe"
+  let temp = @shell.Cmd("mktemp", ["-d"]).output()
+  temp.check()
+  let path = temp.stdout().trim().to_owned()
+  defer @fs.rmdir(path, recursive=true)
+  let old = "examples/mutations/old.graphql"
+  let proposed = path + "/new.graphql"
+  let schema = @fs.read_file(old).text()
+  let candidate = schema.replace(old="title: String! }", new="title: String }")
+  assert_true(candidate != schema)
+  @fs.write_file(proposed, candidate)
+  let docs = path + "/operations.graphql"
+  let entries = [
+    "fragment IssueFields on Issue { id title }",
+    "fragment IssueDetails on Issue { ...IssueFields }",
+  ]
+  for i in 0..<512 {
+    entries.push("query Read\{i} { issue(id: \"demo\") { ...IssueDetails alias: title } }")
+    entries.push("mutation Write\{i} { createIssue(input: { repositoryId: \"demo\", title: \"task\" }) { issue { ...IssueDetails alias: title } } }")
+  }
+  @fs.write_file(docs, entries.join("\n"))
+  let args = ["--observed-only", "--fail-on=breaking", old, proposed, "scale", docs]
+  let first = @shell.Cmd("/usr/bin/time", ["-q", "-f", "elapsed_seconds=%e max_rss_kib=%M", binary, ..args]).output(max_output_bytes=4_000_000)
+  assert_eq(first.exit_code(), 1)
+  guard @json.parse(first.stdout()) is {
+    "changes": [{ "coordinate": "Issue.title", "impacts": Array(impacts), .. }],
+    "coverage": [{ "operations": Array(operations), .. }],
+    "proposed_rejections": [],
+    ..
+  } else {
+    fail("unexpected scale report")
+  }
+  assert_eq(operations.length(), 1024)
+  assert_eq(impacts.length(), 2048)
+  let repeat = @shell.Cmd(binary, args).output(max_output_bytes=4_000_000)
+  assert_eq(repeat.exit_code(), 1)
+  assert_eq(repeat.stdout(), first.stdout())
+  println("1024 operations / 2048 impacts; deterministic JSON")
+  println(first.stderr().trim().to_owned())
+
+  let deep = ["fragment F0 on Issue { title }"]
+  for i in 1..=17 {
+    deep.push("fragment F\{i} on Issue { ...F\{i-1} ...F\{i-1} }")
+  }
+  deep.push("query Expensive { issue(id: \"demo\") { ...F17 } }")
+  @fs.write_file(docs, deep.join("\n"))
+  let rejected = @shell.Cmd(binary, args).output()
+  assert_eq(rejected.exit_code(), 2)
+  assert_true(rejected.stdout().contains("expanded selections") || rejected.stdout().contains("analysis budget"))
+  @fs.write_file(docs, "query Small { issue(id: \"demo\") { id } }")
+  let recovered = @shell.Cmd(binary, args).output()
+  recovered.check()
+  println("Expansion limit and subsequent recovery verified")
+}
+
+///|
+fn main {
+  @async.run_async_main(async fn() { scale() })
+}
