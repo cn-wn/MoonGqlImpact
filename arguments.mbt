@@ -205,73 +205,98 @@ fn Walk::check_argument_variables(
 }
 
 ///|
-fn Walk::argument_value_affected(
+fn Walk::argument_type_affects(
+  self : Walk,
+  old : Argument,
+  proposed : Argument,
+  value : @gql.Value?,
+) -> Bool {
+  guard value is Some(value) else { return proposed.required() }
+  // When the named type stays the same, hold the enum domain constant to
+  // evaluate the type change independently of removed input enum values.
+  let schema = if named(old.kind) == named(proposed.kind) {
+    self.schema
+  } else {
+    self.proposed
+  }
+  !schema.value_fits(
+    proposed.kind,
+    value,
+    self.variables,
+    location_default=old.default_value is Some(_),
+  ) ||
+  coerce_literal(old.kind, value) != coerce_literal(proposed.kind, value) ||
+  self.variable_nullability_affects(old.kind, proposed.kind, value)
+}
+
+///|
+fn Walk::variable_nullability_affects(
   self : Walk,
   old : @gql.GqlType,
   proposed : @gql.GqlType,
   value : @gql.Value,
-  enum_narrowed : Bool,
 ) -> Bool {
-  match value {
-    Variable(name) => {
-      let variable = self.variables[name]
-      nullable_input_narrowed(old, proposed, variable.var_type) || enum_narrowed
-    }
-    ListValue(items) =>
-      match (nullable(old), nullable(proposed)) {
-        (ListType(a), ListType(b)) =>
-          items.any(item => {
-            self.argument_value_affected(a, b, item, enum_narrowed)
-          })
-        _ => false
-      }
-    _ =>
-      match (nullable(old), nullable(proposed)) {
-        (ListType(a), ListType(b)) =>
-          self.argument_value_affected(a, b, value, enum_narrowed)
-        _ => false
-      }
+  if value is Variable(name) {
+    return nullable_input_narrowed(old, proposed, self.variables[name].var_type)
+  }
+  match (nullable(old), nullable(proposed), value) {
+    (ListType(a), ListType(b), ListValue(items)) =>
+      items.any(item => self.variable_nullability_affects(a, b, item))
+    (ListType(a), ListType(b), _) =>
+      self.variable_nullability_affects(a, b, value)
+    _ => false
   }
 }
 
 ///|
-fn Walk::argument_affects_selection(
-  self : Walk,
-  change : ArgumentDiff,
-  value : @gql.Value?,
-) -> Bool {
-  match (change.old, change.proposed, value) {
-    (None, Some(_), _) => true
-    (_, None, value) =>
-      value is Some(_) ||
-      (change.old is Some(old) && old.default_value is Some(_))
-    (Some(_), Some(next), None) => next.required() || change.default_changed
-    (Some(old), Some(next), Some(value)) => {
-      if !self.proposed.value_fits(
-          next.kind,
-          value,
-          self.variables,
-          location_default=next.default_value is Some(_),
-        ) {
-        return true
-      }
-      if value is Variable(name) {
-        let definition = self.variables[name]
-        if !(definition.var_type is NonNullType(_)) &&
-          definition.default_value is None &&
-          change.default_changed {
-          return true
-        }
-      }
-      coerce_literal(old.kind, value) != coerce_literal(next.kind, value) ||
-      self.argument_value_affected(
-        old.kind,
-        next.kind,
-        value,
-        change.enum_narrowed,
-      )
-    }
+fn uses_removed_enum(value : @gql.Value, accepted : Array[String]) -> Bool {
+  match value {
+    Variable(_) => true
+    EnumValue(name) => !accepted.contains(name)
+    ListValue(items) => items.any(item => uses_removed_enum(item, accepted))
+    _ => false
   }
+}
+
+///|
+fn Walk::may_use_argument_default(self : Walk, value : @gql.Value?) -> Bool {
+  match value {
+    None => true
+    Some(Variable(name)) => {
+      let definition = self.variables[name]
+      !(definition.var_type is NonNullType(_)) &&
+      definition.default_value is None
+    }
+    Some(_) => false
+  }
+}
+
+///|
+fn Walk::affected_argument_reasons(
+  self : Walk,
+  diff : ArgumentDiff,
+  value : @gql.Value?,
+) -> Array[ReasonCode] {
+  diff.reasons.filter(code => {
+    match (code, diff.old, diff.proposed) {
+      (ArgumentRemoved, _, _) => value is Some(_)
+      (RequiredArgumentAdded, _, _) => true
+      (ArgumentDefaultChanged, _, _) => self.may_use_argument_default(value)
+      (ArgumentBecameRequired, _, Some(next)) =>
+        match value {
+          None => true
+          Some(Variable(name)) =>
+            !variable_fits(self.variables[name], next.kind, false)
+          Some(_) => false
+        }
+      (InputEnumValueRemoved, _, Some(next)) =>
+        value is Some(input) &&
+        uses_removed_enum(input, self.proposed.enums[named(next.kind)])
+      (ArgumentTypeChanged, Some(old), Some(next)) =>
+        self.argument_type_affects(old, next, value)
+      _ => false
+    }
+  })
 }
 
 ///|
@@ -280,8 +305,42 @@ priv struct ArgumentDiff {
   old : Argument?
   proposed : Argument?
   change : Change
-  default_changed : Bool
-  enum_narrowed : Bool
+  reasons : Array[ReasonCode]
+}
+
+///|
+fn argument_reasons(
+  old : Schema,
+  next : Schema,
+  previous : Argument?,
+  proposed : Argument?,
+) -> Array[ReasonCode] {
+  let reasons = []
+  match (previous, proposed) {
+    (Some(a), Some(b)) => {
+      if !preserves(b.kind, a.kind) {
+        reasons.push(ArgumentTypeChanged)
+      }
+      if named(a.kind) == named(b.kind) && old.enum_narrowed(next, a.kind) {
+        reasons.push(InputEnumValueRemoved)
+      }
+      if !same_default(a, b) {
+        if a.default_value is Some(_) && b.required() {
+          reasons.push(ArgumentBecameRequired)
+        }
+        reasons.push(ArgumentDefaultChanged)
+      }
+    }
+    (Some(a), None) => {
+      reasons.push(ArgumentRemoved)
+      if a.default_value is Some(_) {
+        reasons.push(ArgumentDefaultChanged)
+      }
+    }
+    (None, Some(b)) => if b.required() { reasons.push(RequiredArgumentAdded) }
+    (None, None) => ()
+  }
+  reasons
 }
 
 ///|
@@ -303,22 +362,8 @@ fn argument_diffs(
   for name in names {
     let previous = field.arguments.get(name)
     let proposed = candidate.arguments.get(name)
-    let enum_narrowed = match (previous, proposed) {
-      (Some(a), Some(_)) => old.enum_narrowed(next, a.kind)
-      _ => false
-    }
-    let default_changed = match (previous, proposed) {
-      (Some(a), Some(b)) => !same_default(a, b)
-      _ => false
-    }
-    let changed = match (previous, proposed) {
-      (Some(a), Some(b)) =>
-        !preserves(b.kind, a.kind) || enum_narrowed || default_changed
-      (Some(_), None) => true
-      (None, Some(b)) => b.required()
-      (None, None) => false
-    }
-    if changed {
+    let reasons = argument_reasons(old, next, previous, proposed)
+    if !reasons.is_empty() {
       let change = {
         coordinate: "\{coordinate}(\{name}:)",
         previous_type: previous
@@ -328,15 +373,9 @@ fn argument_diffs(
         baseline: previous.map(a => a.at).unwrap_or(field.at),
         proposed: proposed.map(b => b.at),
         impacts: [],
+        reasons: Some(reasons.map(code => code.reason())),
       }
-      diffs.push({
-        name,
-        old: previous,
-        proposed,
-        change,
-        default_changed,
-        enum_narrowed,
-      })
+      diffs.push({ name, old: previous, proposed, change, reasons, })
     }
   }
   diffs
@@ -396,6 +435,7 @@ fn Walk::record_impact(
   key : String,
   path : Array[String],
   at : Location,
+  reasons : Array[ReasonCode],
 ) -> Unit {
   if self.reported.add_and_check(
       (change.coordinate, key, at.path, at.line, at.column),
@@ -405,6 +445,7 @@ fn Walk::record_impact(
       operation: self.operation,
       response_path: path,
       selection: at,
+      reason_codes: Some(reasons),
     })
   }
 }

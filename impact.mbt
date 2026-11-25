@@ -12,6 +12,7 @@ pub(all) struct Impact {
   operation : String
   response_path : Array[String]
   selection : Location
+  reason_codes : Array[ReasonCode]?
 }
 
 ///|
@@ -23,6 +24,7 @@ pub(all) struct Change {
   baseline : Location
   proposed : Location?
   impacts : Array[Impact]
+  reasons : Array[ChangeReason]?
 }
 
 ///|
@@ -240,8 +242,12 @@ fn Walk::visit(
         self.validate_arguments(old, arguments, at)
         if self.argument_changes.get(coordinate) is Some(diffs) {
           for diff in diffs {
-            if self.argument_affects_selection(diff, arguments.get(diff.name)) {
-              self.record_impact(diff.change, key, next_path, at)
+            let reasons = self.affected_argument_reasons(
+              diff,
+              arguments.get(diff.name),
+            )
+            if !reasons.is_empty() {
+              self.record_impact(diff.change, key, next_path, at, reasons)
             }
           }
         }
@@ -253,7 +259,13 @@ fn Walk::visit(
           )
         }
         if self.changes.get(coordinate) is Some(change) {
-          self.record_impact(change, key, next_path, at)
+          self.record_impact(
+            change,
+            key,
+            next_path,
+            at,
+            change.reasons.unwrap_or([]).map(reason => reason.code),
+          )
         }
         if !field.selection_set.items.is_empty() {
           self.visit(child, source, field.selection_set, next_path, depth + 1)
@@ -332,12 +344,8 @@ pub fn analyze_upgrade(
           }
         }
       }
-      let base_name = named(field.kind)
-      if candidate is Some(new_field) &&
-        preserves(field.kind, new_field.kind) &&
-        old.objects.contains(base_name) == next.objects.contains(base_name) &&
-        old.enums.get(base_name) == next.enums.get(base_name) &&
-        old.scalars.get(base_name) == next.scalars.get(base_name) {
+      let reasons = output_reasons(old, next, field, candidate)
+      if reasons.is_empty() {
         continue
       }
       let coordinate = "\{owner}.\{name}"
@@ -348,6 +356,7 @@ pub fn analyze_upgrade(
         baseline: field.at,
         proposed: candidate.map(fn(f) { f.at }),
         impacts: [],
+        reasons: Some(reasons.map(code => code.reason())),
       }
       changes[coordinate] = change
       ordered.push(change)

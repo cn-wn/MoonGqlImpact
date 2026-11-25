@@ -46,6 +46,11 @@ pub fn Report::to_markdown(self : Report) -> String {
           lines.push("- Field removed")
         }
     }
+    if change.reasons is Some(reasons) {
+      for reason in reasons {
+        lines.push("- " + reason_label(reason))
+      }
+    }
     lines.push("- Baseline <code>" + change.baseline.report_text() + "</code>")
     if change.proposed is Some(at) {
       lines.push("- Proposed location <code>" + at.report_text() + "</code>")
@@ -64,10 +69,35 @@ pub fn Report::to_markdown(self : Report) -> String {
         report_text(impact.response_path.join(".")) +
         "</code>, selection <code>" +
         impact.selection.report_text() +
-        "</code>",
+        "</code>" +
+        impact_reason_label(impact),
       )
     }
     lines.push("")
   }
   lines.join("\n") + "\n"
+}
+
+///|
+fn json_label(value : Json) -> String {
+  let text = match value {
+    String(label) => label
+    _ => value.stringify()
+  }
+  "<code>" + report_text(text) + "</code>"
+}
+
+///|
+fn reason_label(reason : ChangeReason) -> String {
+  json_label(ToJson::to_json(reason.severity)) +
+  " " +
+  json_label(ToJson::to_json(reason.code))
+}
+
+///|
+fn impact_reason_label(impact : Impact) -> String {
+  guard impact.reason_codes is Some(codes) && !codes.is_empty() else {
+    return ""
+  }
+  ", reasons " + codes.map(code => json_label(ToJson::to_json(code))).join(", ")
 }

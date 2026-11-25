@@ -128,6 +128,26 @@ async fn argument_demo() -> Unit {
   } else {
     fail("expected only mobile operations to be affected: " + affected.stdout())
   }
+  let report_only = @shell.Cmd(
+    "moon",
+    [..base[:5], "--fail-on=notice", ..base[5:], "mobile", "examples/arguments/mobile.graphql"],
+  ).output()
+  report_only.check()
+  assert_eq(@json.parse(report_only.stdout()), @json.parse(affected.stdout()))
+  let by_reason = @shell.Cmd(
+    "moon",
+    [..base[:5], "--fail-on=ArgumentTypeChanged", ..base[5:], "mobile", "examples/arguments/mobile.graphql"],
+  ).output()
+  assert_eq(by_reason.exit_code(), 1)
+  assert_eq(@json.parse(by_reason.stdout()), @json.parse(affected.stdout()))
+  for option in ["--fail-on=", "--fail-on=risk,", "--fail-on=typo"] {
+    let invalid = @shell.Cmd(
+      "moon",
+      [..base[:5], option, ..base[5:]],
+    ).output()
+    assert_eq(invalid.exit_code(), 2)
+    assert_true(invalid.stdout().contains("Unknown gate category"))
+  }
   println("Argument CLI demo passed (compatible, nullable, and omitted arguments)")
 }
 

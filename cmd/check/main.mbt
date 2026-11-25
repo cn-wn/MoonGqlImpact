@@ -13,9 +13,14 @@ fn read_source(path : String) -> @impact.Source raise {
 
 ///|
 fn usage() -> Unit {
-  println("Usage: check [--markdown] --schema-only OLD.graphql NEW.graphql")
   println(
-    "Usage: check [--markdown] [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
+    "Usage: check [--markdown] [--fail-on=LEVEL_OR_REASON,...] --schema-only OLD.graphql NEW.graphql",
+  )
+  println(
+    "Usage: check [--markdown] [--fail-on=LEVEL_OR_REASON,...] [--observed-only] OLD.graphql NEW.graphql CLIENT QUERY.graphql [CLIENT QUERY.graphql ...]",
+  )
+  println(
+    "Gate levels are breaking, risk, and notice. You can also select report reason codes.",
   )
   println(
     "Exit status: 0 passes the selected policy, 1 blocks the upgrade, 2 indicates an input error.",
@@ -28,11 +33,48 @@ fn run(args : Array[String]) -> Int32 raise {
     usage()
     return 0
   }
-  let markdown = args.get(1) == Some("--markdown")
-  let option_index = if markdown { 2 } else { 1 }
-  let observed_only = args.get(option_index) == Some("--observed-only")
-  let schema_only = args.get(option_index) == Some("--schema-only")
-  let first = option_index + (if observed_only || schema_only { 1 } else { 0 })
+  let mut markdown = false
+  let mut observed_only = false
+  let mut schema_only = false
+  let mut filtered = false
+  let severities : Array[@impact.Severity] = []
+  let reason_codes : Array[@impact.ReasonCode] = []
+  let mut first = 1
+  while args.get(first) is Some(option) && option.has_prefix("--") {
+    first += 1
+    match option {
+      "--" => break
+      "--markdown" if !markdown => markdown = true
+      "--observed-only" if !observed_only && !schema_only =>
+        observed_only = true
+      "--schema-only" if !observed_only && !schema_only => schema_only = true
+      _ if option.has_prefix("--fail-on=") && !filtered => {
+        filtered = true
+        for item in option[10:].split(",") {
+          match item {
+            "breaking" => severities.push(Breaking)
+            "risk" => severities.push(Risk)
+            "notice" => severities.push(Notice)
+            _ => {
+              let code : @impact.ReasonCode = @json.from_json(
+                Json::string(item.to_owned()),
+              ) catch {
+                _ => {
+                  println("Unknown gate category \{item}")
+                  return 2
+                }
+              }
+              reason_codes.push(code)
+            }
+          }
+        }
+      }
+      _ => {
+        println("Unknown, repeated, or conflicting option \{option}")
+        return 2
+      }
+    }
+  }
   let input_count = args.length() - first
   let valid = if schema_only {
     input_count == 2
@@ -63,10 +105,10 @@ fn run(args : Array[String]) -> Int32 raise {
   } else {
     println(report.to_json().stringify())
   }
-  let blocks = if observed_only {
-    report.changes.any(fn(change) { !change.impacts.is_empty() })
+  let blocks = if filtered {
+    report.blocks(observed_only~, severities~, reason_codes~)
   } else {
-    !report.changes.is_empty()
+    report.blocks(observed_only~)
   }
   if !blocks {
     0

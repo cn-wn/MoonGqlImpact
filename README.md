@@ -15,7 +15,7 @@ moon run cmd/check --target native -- examples/apollo/old.graphql examples/apoll
 
 The JSON report identifies `Mission.launchDate` at the flight board's fragment and `Mission.crew` in the roster query. The recorded Apollo 11 crew and launch date illustrate the data being consumed. The proposed schema is an example upgrade, and the checker reads the SDL and query files directly. After dependencies are installed, the example runs offline.
 
-Exit status **0** means no regression within the supported profile. **1** means the report contains regressions, including regressions with no registered consumer. **2** means input is invalid, unsupported, or unreadable. Pass multiple files under the same client name to resolve shared fragments across files.
+Exit status **0** means the check passes the selected gate. **1** means a finding blocks the upgrade. By default, every finding counts, including findings without a registered consumer. **2** means input is invalid, unsupported, or unreadable. Pass multiple files under the same client name to resolve shared fragments across files.
 
 For a rollout gated on known consumers, pass `--observed-only` before the two schema paths. The CLI still emits the full report and returns **1** only if a registered operation has an impact. Invalid or unsupported inputs still return **2**. A report with no observed impact only describes the supplied catalog.
 
@@ -23,7 +23,21 @@ For an initial rollout without a client catalog, run `moon run cmd/check --targe
 
 Run `moon run cmd/check --target native -- --help` to see the accepted command forms and exit codes.
 
-Place `--markdown` before the policy flag to produce a readable report for a CI job summary. For example, run `moon run cmd/check --target native -- --markdown --schema-only examples/apollo/old.graphql examples/apollo/new.graphql`. Its exit status follows the selected policy, and the report includes every change.
+Place `--markdown` before the schema paths to produce a readable report for a CI job summary. For example, run `moon run cmd/check --target native -- --markdown --schema-only examples/apollo/old.graphql examples/apollo/new.graphql`. Its exit status follows the selected policy, and the report includes every change.
+
+## Choose what blocks CI
+
+Use `--fail-on=breaking` to block on query or contract incompatibilities while keeping other findings in the report. The option accepts a comma-separated list of levels and exact reason codes, such as `--fail-on=breaking,OutputEnumValueAdded`. Supply options before the schema paths.
+
+| Level | Reason codes |
+| --- | --- |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved` |
+| `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged` |
+| `notice` | `ScalarSpecificationChanged` |
+
+`FieldRemoved` describes a selection that fails validation. `OutputNullabilityWeakened` describes a weaker response guarantee, even when the query remains valid. An enum addition can affect consumers that handle every known value explicitly. A scalar specification URL change records a change in the declaration.
+
+Without a filter, the gate considers every reported change. With `--observed-only`, a selected reason must apply to at least one registered selection. An invalid category or input returns **2**. JSON includes `reasons` with a code and severity for each change, plus `reason_codes` for each impact. Markdown displays the same breakdown. Library callers can use `Report::blocks` with severity or reason-code filters. Older reports without reason metadata remain readable and are treated conservatively by the gate.
 
 ## Check an argument upgrade
 
@@ -47,13 +61,13 @@ Call `analyze_upgrade(baseline, proposed, clients)` with named `Source` values a
 
 ## Supported profile
 
-Query-only SDL with object types, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Custom scalar `@specifiedBy(url: "...")` declarations are preserved in reports. Adding, removing or changing their URL triggers the conservative gate for fields returning that scalar. URLs are compared as text and are never fetched. Other scalar directives are rejected. Executable documents support named queries or a sole anonymous query per client (reported as `<anonymous>`), aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
+Query-only SDL with object types, a default or explicit query root, built-in and declared custom scalar leaves, and nested list/non-null wrappers. The query root must keep its name. Custom scalars are opaque by name, so their serializer behavior is outside the analysis. Custom scalar `@specifiedBy(url: "...")` declarations are preserved in reports. Adding, removing or changing their URL is reported as a notice for fields returning that scalar. URLs are compared as text and are never fetched. Other scalar directives are rejected. Executable documents support named queries or a sole anonymous query per client (reported as `<anonymous>`), aliases, the `__typename` meta-field, and named and inline fragments on the matching object type. The core is portable. The CLI reads local UTF-8 files on native targets.
 
 Use `extend type` to add fields to an existing object within the same SDL snapshot. Extended fields retain their declaration locations. An output field may carry `@deprecated` with an optional reason. Deprecation metadata alone does not change the output contract. A later field removal still reports affected queries.
 
 Selections may use `@include(if: true)` or `@skip(if: false)` with either literal boolean or a Boolean variable declared by the operation. Use `Boolean!` or `Boolean` with a non-null boolean default. The report retains dependencies in every branch because GraphQL validates fields before evaluating execution directives.
 
-Output enums are checked by value set, including values added through `extend enum`. Extensions can precede the enum definition. Duplicate values and missing base enums are rejected. Adding or removing a value flags affected fields and registered queries. Additions can affect exhaustive client code, and removals change the documented result domain. Both are gated conservatively. Reports render enum domains as `Status{READY, WAITING}` inside their original list and nullability wrappers.
+Output enums are checked by value set, including values added through `extend enum`. Extensions can precede the enum definition. Duplicate values and missing base enums are rejected. Adding or removing a value flags affected fields and registered queries. Additions can affect exhaustive client code, and removals change the documented result domain. Both are classified as risks and count toward the default gate. Reports render enum domains as `Status{READY, WAITING}` inside their original list and nullability wrappers.
 
 Field arguments and variables support built-in scalars, enums, and nested lists. The checker reports removed arguments, new required arguments, type changes that can affect existing values, input enum narrowing, and changes in defaults on existing arguments. It validates baseline uses and attributes changes to the affected operation. Variables declared nullable can still carry an explicit null even if their default lets the query pass validation. Arguments appear as coordinates such as `Query.user(id:)` with their type and default in the existing JSON shape. Schema locations point to argument declarations, and operation locations point to the field selection. For a new required argument, the previous type is `<absent>` and the baseline location points to the field.
 
