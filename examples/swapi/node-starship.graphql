@@ -1,0 +1,9 @@
+query StarshipDetails($id: ID!) {
+  result: node(id: $id) {
+    __typename
+    ... on Starship {
+      name
+      model
+    }
+  }
+}

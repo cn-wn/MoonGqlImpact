@@ -1,0 +1,84 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+async fn verify(root : String) -> Unit {
+  let baseline = root + "/schema.graphql"
+  let upstream_query = root + "/doc/example_queries/07_fragments.graphql"
+  let introspection = root + "/doc/example_queries/08_introspection.graphql"
+  let local_query = "examples/swapi/node-starship.graphql"
+  let input = @fs.read_file(baseline).text()
+  let original = "type Starship implements Node {"
+  let proposed = input.replace(old=original, new="type Starship {")
+  assert_true(proposed != input)
+  let tmp = @shell.Cmd("mktemp", ["-d"]).output()
+  tmp.check()
+  let directory = tmp.stdout().trim().to_owned()
+  let candidate = directory + "/proposed.graphql"
+  defer @fs.rmdir(directory)
+  @fs.write_file(candidate, proposed)
+  defer @fs.remove(candidate)
+
+  let prefix = ["run", "cmd/check", "--target", "native", "--", "--observed-only"]
+  let old = @shell.Cmd(
+    "moon", [..prefix, baseline, baseline, "relay-client", upstream_query, "node-client", local_query],
+  ).output()
+  old.check()
+  assert_eq(@json.parse(old.stdout()), { "changes": [] })
+
+  let compatible = @shell.Cmd(
+    "moon", [..prefix, baseline, candidate, "relay-client", upstream_query],
+  ).output()
+  compatible.check()
+  guard @json.parse(compatible.stdout()) is {
+    "changes": [{ "coordinate": "Node", "impacts": [], .. }], ..
+  } else {
+    fail("expected the upstream Starship query to remain compatible: " + compatible.stdout())
+  }
+
+  let changed = @shell.Cmd(
+    "moon", [..prefix, baseline, candidate, "relay-client", upstream_query, "node-client", local_query],
+  ).output()
+  assert_eq(changed.exit_code(), 1)
+  guard @json.parse(changed.stdout()) is {
+    "changes": [{
+      "coordinate": "Node",
+      "impacts": [{
+        "client": "node-client",
+        "operation": "StarshipDetails",
+        "response_path": ["result"],
+        "selection": { "path": "examples/swapi/node-starship.graphql", "line": 4, .. },
+        "reason_codes": ["AbstractMemberRemoved", "FragmentNoLongerPossible"],
+        ..
+      }],
+      ..
+    }],
+    ..
+  } else {
+    fail("expected one affected Node fragment: " + changed.stdout())
+  }
+
+  let unsupported = @shell.Cmd(
+    "moon", [..prefix, baseline, candidate, "introspection", introspection],
+  ).output()
+  assert_eq(unsupported.exit_code(), 2)
+  assert_true(unsupported.stdout().contains("08_introspection.graphql"))
+  assert_true(unsupported.stdout().contains("schema introspection fields"))
+  println("SWAPI passed: unchanged baseline, compatible upstream query, blocked Node fragment, unsupported introspection")
+}
+
+///|
+fn main {
+  let args = @env.args()
+  guard args.length() == 2 else {
+    abort("Usage: moon run --deny-warn scripts/swapi.mbtx -- PATH_TO_SWAPI_CHECKOUT")
+  }
+  @async.run_async_main(async fn() { verify(args[1]) })
+}

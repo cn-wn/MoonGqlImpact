@@ -66,3 +66,15 @@ jobs:
       - name: Run documented Apollo demo
         if: runner.os == 'Linux'
         run: moon run --deny-warn scripts/demo.mbtx
+
+      - name: Check out the pinned SWAPI fixture
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v4
+        with:
+          repository: graphql/swapi-graphql
+          ref: 8c0bf5868f11fe84942548180751fceeb36bd606
+          path: swapi-upstream
+          persist-credentials: false
+      - name: Verify client impact on the public SWAPI schema
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/swapi.mbtx -- swapi-upstream

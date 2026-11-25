@@ -49,6 +49,10 @@ moon run cmd/check --target native -- --observed-only examples/arguments/old.gra
 
 The report identifies `Query.user(id:)`. The mobile operations `EditProfile` and `CurrentUser` are affected because one supplies a nullable variable and the other omits the argument. The desktop operation uses a non-null variable and can keep its query. Run with the desktop operation alone to pass `--observed-only` while still seeing the global change.
 
+## Try a public schema
+
+The [SWAPI case](examples/swapi/README.md) uses the complete upstream Schema and two original example queries at a pinned revision. It verifies a still-compatible query, an affected interface fragment, and a diagnostic for an unsupported query.
+
 ## Where to use it
 
 - **Server release gate.** Export the current and proposed SDL in a pull request. Check them with queries from the web and mobile clients. Use the reported locations to restore the old field contract or coordinate a client release.
