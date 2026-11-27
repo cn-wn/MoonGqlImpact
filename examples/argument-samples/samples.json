@@ -1,0 +1,9 @@
+[
+  {"client":"web","operation":"Find","id":"null-id","variables":{"id":null}},
+  {"client":"web","operation":"Find","id":"missing-id","variables":{}},
+  {"client":"web","operation":"Find","id":"present-id","variables":{"id":"demo-id"}},
+  {"client":"web","operation":"Nested","id":"new-default","variables":{}},
+  {"client":"web","operation":"Nested","id":"null-tag","variables":{"tag":null}},
+  {"client":"web","operation":"Nested","id":"filtered","variables":{"enabled":false,"tag":null}},
+  {"client":"web","operation":"Nested","id":"missing-item","variables":{"tag":"fixed"}}
+]

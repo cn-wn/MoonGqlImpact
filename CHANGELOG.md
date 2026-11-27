@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Check sample values at field arguments, including omitted variables, explicit nulls, and nested defaults.
+
 ## 0.2.0
 
 - Verify the release archive with an unpacked native CLI, an independent downstream consumer, and a 1,024-operation workload in CI.

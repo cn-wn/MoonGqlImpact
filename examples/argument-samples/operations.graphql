@@ -1,0 +1,11 @@
+query Find($id: ID) {
+  ...Lookup
+}
+
+fragment Lookup on Query {
+  result: lookup(id: $id)
+}
+
+query Nested($tag: String, $term: ID, $enabled: Boolean! = true) {
+  hits: search(filter: { tag: $tag, terms: [$term] }) @include(if: $enabled)
+}

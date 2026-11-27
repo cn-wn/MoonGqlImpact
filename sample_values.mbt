@@ -18,6 +18,9 @@ pub struct SampleAssessment {
   path : String?
   diagnostic : String?
   reason : ChangeReason?
+  argument_coordinate : String?
+  response_path : Array[String]?
+  selection : Location?
 }
 
 ///|
@@ -107,6 +110,18 @@ fn Coercion::object(
 }
 
 ///|
+fn Coercion::step(
+  self : Coercion,
+  path : String,
+  depth : Int32,
+) -> Unit raise SampleInputError {
+  self.budget -= 1
+  if depth > 128 || self.budget < 0 {
+    raise ValueLimit(path)
+  }
+}
+
+///|
 fn Coercion::value(
   self : Coercion,
   kind : @gql.GqlType,
@@ -114,10 +129,7 @@ fn Coercion::value(
   path : String,
   depth : Int32,
 ) -> Json raise SampleInputError {
-  self.budget -= 1
-  if depth > 128 || self.budget < 0 {
-    raise ValueLimit(path)
-  }
+  self.step(path, depth)
   if value is Null {
     if kind is NonNullType(_) {
       raise ValueRejected(path, "null is not allowed")
@@ -173,7 +185,7 @@ fn coerce_variables(
   schema : Schema,
   definitions : Map[String, @gql.VariableDefinition],
   variables : Json,
-) -> Json raise SampleInputError {
+) -> Map[String, Json] raise SampleInputError {
   guard variables is Object(values) else {
     raise ValueRejected("", "expected a JSON variables object")
   }
@@ -202,7 +214,7 @@ fn coerce_variables(
         }
     }
   }
-  Json::object(output)
+  output
 }
 
 ///|
@@ -251,6 +263,7 @@ fn VariableSample::assessment(
   path? : String,
   diagnostic? : String,
   reason? : ReasonCode,
+  site? : SampleArgumentSite,
 ) -> SampleAssessment {
   {
     client: self.client,
@@ -260,19 +273,32 @@ fn VariableSample::assessment(
     path,
     diagnostic,
     reason: reason.map(code => code.reason()),
+    argument_coordinate: if site is Some(selected) &&
+      path is Some(path) &&
+      path.has_prefix("/") &&
+      !path.has_prefix("/@") &&
+      path[1:].split("/").next() is Some(name) {
+      Some("\{selected.coordinate}(\{name}:)")
+    } else {
+      None
+    },
+    response_path: site.map(selected => selected.response_path),
+    selection: site.map(selected => selected.location),
   }
 }
 
 ///|
 fn assess_sample(
   sample : VariableSample,
-  old : Schema,
-  next : Schema,
-  definitions : Map[String, @gql.VariableDefinition],
+  baseline : Walk,
+  proposed : Walk?,
   at : Location,
-  operation_rejected : Bool,
 ) -> SampleAssessment raise AnalysisError {
-  let before = coerce_variables(old, definitions, sample.variables) catch {
+  let before = coerce_variables(
+    baseline.schema,
+    baseline.variables,
+    sample.variables,
+  ) catch {
     ValueRejected(path, message) =>
       raise Invalid(
         at,
@@ -284,10 +310,26 @@ fn assess_sample(
         "sample \{sample.id} exceeds coercion limits at \{path}",
       )
   }
-  if operation_rejected {
+  let baseline_arguments = baseline.sample_arguments(before) catch {
+    ArgumentRejected(site, path, message) =>
+      raise Invalid(
+        site.location,
+        "sample \{sample.id} failed baseline field input at \{path}: \{message}",
+      )
+    ArgumentLimit(site, path) =>
+      raise Unsupported(
+        site.location,
+        "sample \{sample.id} exceeds field input coercion limits at \{path}",
+      )
+  }
+  guard proposed is Some(proposed) else {
     return sample.assessment(OperationRejected)
   }
-  let after = coerce_variables(next, definitions, sample.variables) catch {
+  let after = coerce_variables(
+    proposed.schema,
+    proposed.variables,
+    sample.variables,
+  ) catch {
     ValueRejected(path, message) =>
       return sample.assessment(
         VariableRejected,
@@ -301,13 +343,42 @@ fn assess_sample(
         "sample \{sample.id} exceeds coercion limits at \{path}",
       )
   }
-  match first_coercion_difference(before, after, "") {
-    Some(path) =>
-      sample.assessment(
+  let proposed_arguments = proposed.sample_arguments(after) catch {
+    ArgumentRejected(site, path, message) =>
+      return sample.assessment(
+        VariableRejected,
+        path~,
+        diagnostic=message,
+        reason=VariableSampleRejected,
+        site~,
+      )
+    ArgumentLimit(site, path) =>
+      raise Unsupported(
+        site.location,
+        "sample \{sample.id} exceeds field input coercion limits at \{path}",
+      )
+  }
+  if first_coercion_difference(Json::object(before), Json::object(after), "")
+    is Some(path) {
+    return sample.assessment(
+      CoercionChanged,
+      path~,
+      reason=VariableSampleCoercionChanged,
+    )
+  }
+  // Both walks traverse the same validated selections in document order.
+  let sites = proposed.sample_sites.unwrap_or([])
+  for index, old_arguments in baseline_arguments {
+    if old_arguments is Some(old) &&
+      proposed_arguments[index] is Some(next) &&
+      first_coercion_difference(old, next, "") is Some(path) {
+      return sample.assessment(
         CoercionChanged,
         path~,
         reason=VariableSampleCoercionChanged,
+        site=sites[index],
       )
-    None => sample.assessment(Unchanged)
+    }
   }
+  sample.assessment(Unchanged)
 }

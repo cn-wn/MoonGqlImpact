@@ -184,6 +184,9 @@ pub struct SampleAssessment {
   path : String?
   diagnostic : String?
   reason : ChangeReason?
+  argument_coordinate : String?
+  response_path : Array[String]?
+  selection : Location?
 }
 
 #derive(Eq, @debug.Debug, @json.FromJson, @json.ToJson)

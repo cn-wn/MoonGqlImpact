@@ -188,6 +188,7 @@ priv struct Walk {
   reported : Map[(String, String, String, Int32, Int32), Int32]
   variables : Map[String, @gql.VariableDefinition]
   used_variables : Set[String]
+  sample_sites : Array[SampleArgumentSite]?
   mut budget : Int32
 }
 
@@ -240,6 +241,7 @@ fn Walk::visit(
   depth : Int32,
   scope : FragmentScope,
   parents : Array[String],
+  sample? : SampleBranch,
 ) -> Unit raise AnalysisError {
   if depth > 128 {
     raise Unsupported(
@@ -306,6 +308,19 @@ fn Walk::visit(
           at,
         )
         self.validate_arguments(old, arguments, at)
+        let branch = sample.map(value => {
+          value.within(scope).with_directives(field.directives)
+        })
+        if self.sample_sites is Some(sites) && branch is Some(branch) {
+          sites.push({
+            coordinate,
+            response_path: next_path,
+            location: at,
+            definitions: old.arguments,
+            supplied: arguments,
+            branch,
+          })
+        }
         if !self.changes.inputs.is_empty() &&
           self.proposed.fields.get(owner) is Some(fields) &&
           fields.get(field.name) is Some(proposed) {
@@ -361,6 +376,7 @@ fn Walk::visit(
             depth + 1,
             self.new_scope(child),
             lineage,
+            sample?=branch,
           )
         }
       }
@@ -392,6 +408,9 @@ fn Walk::visit(
           depth + 1,
           effective,
           parents,
+          sample?=sample.map(value => {
+            value.within(effective).with_directives(spread.directives)
+          }),
         )
         self.active.remove(name)
       }
@@ -411,6 +430,9 @@ fn Walk::visit(
           depth + 1,
           effective,
           parents,
+          sample?=sample.map(value => {
+            value.within(effective).with_directives(fragment.directives)
+          }),
         )
       }
     }
@@ -426,6 +448,7 @@ fn Walk::new(
   seen_fragments : Set[String],
   client~ : String,
   operation~ : String,
+  collect_samples~ : Bool,
 ) -> Walk {
   {
     schema,
@@ -440,6 +463,11 @@ fn Walk::new(
     reported: Map([]),
     variables: Map([]),
     used_variables: Set([]),
+    sample_sites: if collect_samples {
+      Some([])
+    } else {
+      None
+    },
     budget: 100000,
   }
 }
@@ -485,7 +513,16 @@ fn Walk::validate_operation(
           )
       }
   }
-  self.visit(root, file, query.selection_set, [], 0, self.new_scope(root), [])
+  self.visit(
+    root,
+    file,
+    query.selection_set,
+    [],
+    0,
+    self.new_scope(root),
+    [],
+    sample?=self.sample_sites.map(_ => { reachable: true, directives: [], }),
+  )
   for name, definition in self.variables {
     if !self.used_variables.contains(name) {
       raise Invalid(file.at(definition.position), "unused variable \{name}")
@@ -671,6 +708,8 @@ fn analyze(
     let seen_fragments = Set([])
     let analyzed_operations = []
     for operation, (file, query) in catalog.operations {
+      let selected = samples_by_operation.get((client.name, operation))
+      let collect_samples = selected is Some(_)
       let walk = Walk::new(
         old,
         next,
@@ -679,6 +718,7 @@ fn analyze(
         seen_fragments,
         client=client.name,
         operation~,
+        collect_samples~,
       )
       walk.validate_operation(file, query)
       if query.kind is Mutation && removed_mutation_root is Some(change) {
@@ -686,7 +726,7 @@ fn analyze(
           MutationRootRemoved,
         ])
       }
-      let mut operation_rejected = false
+      let mut proposed_walk = None
       if validate_proposed {
         let check = Walk::new(
           next,
@@ -696,10 +736,12 @@ fn analyze(
           Set([]),
           client=client.name,
           operation~,
+          collect_samples~,
         )
-        check.validate_operation(file, query, validate_proposed=true) catch {
-          Invalid(location, message) => {
-            operation_rejected = true
+        try
+          check.validate_operation(file, query, validate_proposed=true)
+        catch {
+          Invalid(location, message) =>
             proposed_rejections.push({
               client: client.name,
               operation,
@@ -707,20 +749,19 @@ fn analyze(
               message,
               reason: ProposedOperationRejected.reason(),
             })
-          }
           error => raise error
+        } noraise {
+          _ => proposed_walk = Some(check)
         }
       }
-      if samples_by_operation.get((client.name, operation)) is Some(selected) {
+      if selected is Some(selected) {
         for sample in selected {
           let key = (client.name, operation, sample.id)
           sample_results[key] = assess_sample(
             sample,
-            old,
-            next,
-            walk.variables,
+            walk,
+            proposed_walk,
             file.at(query.position),
-            operation_rejected,
           )
         }
       }

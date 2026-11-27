@@ -126,10 +126,73 @@ async fn verify(package_dir : String) -> Unit {
 }
 
 ///|
+let argument_oracle : String =
+  #|const fs = require('node:fs');
+  #|const path = require('node:path');
+  #|const [library, root] = process.argv.slice(1);
+  #|const gql = require(path.resolve(library));
+  #|if (gql.version !== '16.11.0') throw new Error('Expected graphql@16.11.0');
+  #|const read = name => fs.readFileSync(path.join(root, name), 'utf8');
+  #|const document = gql.parse(read('operations.graphql'));
+  #|const old = gql.buildSchema(read('old.graphql'));
+  #|const next = gql.buildSchema(read('new.graphql'));
+  #|const capture = args => JSON.stringify(args);
+  #|const run = (schema, row) => gql.executeSync({
+  #|  schema, document, operationName: row.operation, variableValues: row.variables,
+  #|  rootValue: {lookup: capture, search: capture},
+  #|});
+  #|const names = JSON.parse(read('samples.json')).map(row => {
+  #|  const before = run(old, row);
+  #|  const after = run(next, row);
+  #|  if (before.errors) throw new Error('Fixture has an invalid baseline sample');
+  #|  const status = after.errors ? 'VariableRejected' :
+  #|    JSON.stringify(before.data) === JSON.stringify(after.data) ? 'Unchanged' : 'CoercionChanged';
+  #|  return {id: row.id, status};
+  #|});
+  #|console.log(JSON.stringify({
+  #|  staticErrors: [gql.validate(old, document).length, gql.validate(next, document).length], names,
+  #|}));
+
+///|
+async fn verify_arguments(package_dir : String) -> Unit {
+  let root = "examples/argument-samples"
+  let reference = @shell.Cmd("node", ["-e", argument_oracle, package_dir, root]).output()
+  reference.check()
+  guard @json.parse(reference.stdout()) is { "staticErrors": [0, 0], "names": expected, .. } else {
+    fail("unexpected reference result: " + reference.stdout())
+  }
+  let actual = @shell.Cmd("moon", [
+    "run", "cmd/check", "--target", "native", "--", "--config", root + "/check.json",
+  ]).output()
+  assert_eq(actual.exit_code(), 1)
+  guard @json.parse(actual.stdout()) is {
+    "proposed_rejections": [], "sample_assessments": Array(samples), ..
+  } else {
+    fail("unexpected argument report: " + actual.stdout())
+  }
+  let names = samples.map(row => {
+    guard row is { "id": id, "status": status, .. } else { fail("missing sample result") }
+    Json::object(Map([("id", id), ("status", status)]))
+  })
+  assert_eq(Json::array(names), expected)
+  assert_true(samples[0] is {
+    "argument_coordinate": "Query.lookup(id:)", "response_path": ["result"],
+    "selection": {"line": 6, ..}, "path": "/id", ..
+  })
+  assert_true(samples[3] is {
+    "argument_coordinate": "Query.search(filter:)", "response_path": ["hits"], "path": "/filter/tag", ..
+  })
+  println("GraphQL.js 16.11.0 agrees on seven field-argument samples")
+}
+
+///|
 fn main {
   let args = @env.args()
   guard args.length() == 2 else {
     abort("Usage: moon run --deny-warn scripts/graphql_oracle.mbtx -- PATH_TO_GRAPHQL_JS")
   }
-  @async.run_async_main(async fn() { verify(args[1]) })
+  @async.run_async_main(async fn() {
+    verify(args[1])
+    verify_arguments(args[1])
+  })
 }

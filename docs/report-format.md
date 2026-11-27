@@ -29,6 +29,10 @@ Use `AnalyzedUpgrade::blocks` to evaluate both schema changes and operation reje
 
 `sample_assessments` appears when variable samples are supplied. Statuses are `Unchanged`, `CoercionChanged`, `VariableRejected`, and `OperationRejected`. The last status refers to the separate static operation rejection. Changed or rejected variables carry an input path such as `/filter/rules/0/status`. Sample rows include the sample ID, client and operation. Variable values stay in the input catalog. A sample must pass baseline coercion before it contributes upgrade evidence.
 
+Field-argument evidence also supplies `argument_coordinate` (for example `Query.lookup(id:)`), `response_path` (the aliased path), and `selection` (the source location). In those rows, `path` starts at the argument map. The checker first validates variable declarations, then evaluates argument expressions and applicable defaults at the field sites. A rejection takes priority over a changed value. Successful samples retain the first variable difference, followed by the first field-argument difference when variable values match.
+
+The field check follows sample-driven `@skip` and `@include` conditions and statically reachable fragments. Evidence for a field depends on the service reaching that selection. The checker uses SDL field definitions and does not simulate resolver results or concrete runtime object types.
+
 ## Compatibility
 
 - A report without `format_version` uses the legacy `changes` format. Its client coverage is unknown.

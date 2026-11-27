@@ -1,0 +1,9 @@
+input Filter {
+  tag: String! = "after"
+  terms: [ID]
+}
+
+type Query {
+  lookup(id: ID! = "guest"): String
+  search(filter: Filter!): String
+}

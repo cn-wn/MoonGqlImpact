@@ -119,11 +119,24 @@ fn Report::render_markdown(
       let reason = sample.reason
         .map(value => " (" + reason_label(value) + ")")
         .unwrap_or("")
+      let coordinate = sample.argument_coordinate
+        .map(value => ", argument <code>" + report_text(value) + "</code>")
+        .unwrap_or("")
+      let response = sample.response_path
+        .map(parts => {
+          ", response path <code>" + report_text(parts.join(".")) + "</code>"
+        })
+        .unwrap_or("")
+      let selection = sample.selection
+        .map(location => {
+          ", selection <code>" + location.report_text() + "</code>"
+        })
+        .unwrap_or("")
       let diagnostic = sample.diagnostic
         .map(value => " — " + report_text(value))
         .unwrap_or("")
       lines.push(
-        "- <code>\{report_text(sample.client)}</code> / <code>\{report_text(sample.operation)}</code> / <code>\{report_text(sample.id)}</code> \{json_label(ToJson::to_json(sample.status))}\{path}\{diagnostic}\{reason}",
+        "- <code>\{report_text(sample.client)}</code> / <code>\{report_text(sample.operation)}</code> / <code>\{report_text(sample.id)}</code> \{json_label(ToJson::to_json(sample.status))}\{path}\{coordinate}\{response}\{selection}\{diagnostic}\{reason}",
       )
     }
     lines.push("")

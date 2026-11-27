@@ -73,7 +73,7 @@ The [SWAPI case](examples/swapi/README.md) uses the complete upstream Schema and
 
 ## Check offline variable samples
 
-Set `variable_samples` in the CI configuration to a relative JSON file. Each sample selects a registered client and operation. The analyzer reports values the proposed schema rejects and values that still coerce successfully with different defaults. The report records the sample identity and value path. See the [offline example](examples/variables/README.md).
+Set `variable_samples` in the CI configuration to a relative JSON file. Each sample selects a registered client and operation. The analyzer validates variable declarations and compares the effective arguments at selected fields. It reports rejected values and changed defaults, with the argument coordinate, aliased response path, and source location for field-level findings. See the [offline variable example](examples/variables/README.md) and the [field argument regression](examples/argument-samples/README.md).
 
 Custom scalar inputs require an explicit rule. Configuration accepts `string`, `boolean`, `number`, or `decimal-string` profiles in `scalar_inputs`, keyed by declared scalar name. Library callers can use `analyze_upgrade_with_samples` with deterministic validators. These rules check the caller-defined input representation for both snapshots.
 

@@ -1,0 +1,9 @@
+input Filter {
+  tag: String = "before"
+  terms: [ID]
+}
+
+type Query {
+  lookup(id: ID = "guest"): String
+  search(filter: Filter!): String
+}
