@@ -247,7 +247,7 @@ fn Walk::check_argument_variables(
       if !self.variables.contains(name) {
         raise Invalid(at, "undefined variable \{name}")
       }
-      self.used_variables.add(name)
+      self.used_variables.insert(name)
     }
     ListValue(items) =>
       for item in items {
@@ -420,10 +420,10 @@ fn argument_diffs(
   let diffs = []
   let names = Set([])
   for name, _ in field.arguments {
-    names.add(name)
+    names.insert(name)
   }
   for name, _ in candidate.arguments {
-    names.add(name)
+    names.insert(name)
   }
   for name in names {
     let previous = field.arguments.get(name)

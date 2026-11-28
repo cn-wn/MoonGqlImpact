@@ -78,11 +78,7 @@ fn read_variable_samples(
       path, "variable sample file exceeds 1,000,000 string code units",
     )
   }
-  let json = @json.parse(
-    file.text,
-    max_nesting_depth=128,
-    reject_duplicate_keys=true,
-  ) catch {
+  let json = @json.parse(file.text, reject_duplicate_keys=true) catch {
     _ => raise config_error(path, "invalid variable sample JSON")
   }
   guard json is Array(items) else {

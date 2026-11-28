@@ -150,7 +150,7 @@ fn Schema::object_literal_fits(
   let seen = Set([])
   for (name, value) in entries {
     guard object.fields.get(name) is Some(field) &&
-      seen.add_and_check(name) &&
+      seen.insert_and_check(name) &&
       self.value_fits(
         field.kind,
         value,
@@ -231,10 +231,10 @@ fn input_object_diffs(
     guard next.input_objects.get(name) is Some(candidate) else { continue }
     let field_names = Set([])
     for field, _ in object.fields {
-      field_names.add(field)
+      field_names.insert(field)
     }
     for field, _ in candidate.fields {
-      field_names.add(field)
+      field_names.insert(field)
     }
     let diffs = []
     for field in field_names {
@@ -360,7 +360,7 @@ fn Walk::observe_input_variable(
   let visited = Set([])
   let pending = [named(kind)]
   while pending.pop() is Some(name) {
-    guard visited.add_and_check(name) &&
+    guard visited.insert_and_check(name) &&
       self.schema.input_objects.get(name) is Some(object) &&
       self.proposed.input_objects.get(name) is Some(candidate) else {
       continue
@@ -491,7 +491,7 @@ fn Walk::observe_input(
             None =>
               if field.default_value is Some(item) {
                 let coordinate = "\{name}.\{field_name}"
-                if !defaults.add_and_check(coordinate) {
+                if !defaults.insert_and_check(coordinate) {
                   raise Unsupported(
                     site.at,
                     "cyclic input default expansion through \{coordinate}",
@@ -526,7 +526,7 @@ fn Schema::validate_field_default(
   guard field.default_value is Some(value) && !checked.contains(coordinate) else {
     return
   }
-  if !active.add_and_check(coordinate) {
+  if !active.insert_and_check(coordinate) {
     raise Invalid(field.at, "cyclic input field default through \{coordinate}")
   }
   self.validate_default_expansion(
@@ -538,7 +538,7 @@ fn Schema::validate_field_default(
     depth,
   )
   active.remove(coordinate)
-  checked.add(coordinate)
+  checked.insert(coordinate)
 }
 
 ///|

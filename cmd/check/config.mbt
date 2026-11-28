@@ -157,7 +157,7 @@ fn config_clients(
     guard fields.get("name") is Some(String(name)) && !name.trim().is_empty() else {
       raise config_error(path, "\{label}.name must be a nonempty string")
     }
-    if !names.add_and_check(name) {
+    if !names.insert_and_check(name) {
       raise config_error(path, "duplicate client name \{name}")
     }
     let query_paths = config_paths(
@@ -170,7 +170,7 @@ fn config_clients(
     for relative in query_paths {
       for full in expand_query_path(root, relative, path) {
         let key = if @path.sep == '\\' { full.to_lower() } else { full }
-        if !seen.add_and_check(key) {
+        if !seen.insert_and_check(key) {
           raise config_error(
             path,
             "duplicate query path \{full} for client \{name}",
@@ -190,11 +190,7 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
   if file.text.length() > 1_000_000 {
     raise config_error(path, "config exceeds 1,000,000 string code units")
   }
-  let json = @json.parse(
-    file.text,
-    max_nesting_depth=16,
-    reject_duplicate_keys=true,
-  ) catch {
+  let json = @json.parse(file.text, reject_duplicate_keys=true) catch {
     error => raise config_error(path, "invalid JSON: \{error}")
   }
   let fields = config_object(json, path, "config", [
@@ -223,7 +219,7 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
       let parsed = Gate::new()
       let seen = Set([])
       for item in config_paths(policy.get("fail_on"), path, "policy.fail_on") {
-        if !seen.add_and_check(item) {
+        if !seen.insert_and_check(item) {
           raise config_error(path, "duplicate gate category \{item}")
         }
         if !parsed.add_category(item) {

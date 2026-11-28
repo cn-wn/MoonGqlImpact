@@ -128,7 +128,7 @@ fn index_enum_values(
 ) -> Unit raise AnalysisError {
   for value in definitions {
     let at = source.at(value.position)
-    if value.name.has_prefix("__") || !values.add_and_check(value.name) {
+    if value.name.has_prefix("__") || !values.insert_and_check(value.name) {
       raise Invalid(at, "duplicate or reserved enum value: \{value.name}")
     }
     validate_deprecation(source, value.directives)

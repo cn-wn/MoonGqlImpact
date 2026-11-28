@@ -6,7 +6,7 @@ See the [0.2.0 release notes](CHANGELOG.md), [package and scale verification](do
 
 ## Try the Apollo 11 example
 
-Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261119), clone this repository, and run from its root:
+Install [MoonBit](https://www.moonbitlang.com/download/) (verified with moon 0.1.20261126), clone this repository, and run from its root:
 
 ```sh
 moon update

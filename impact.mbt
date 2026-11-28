@@ -106,7 +106,7 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
   let operations = Map([])
   let paths = Set([])
   for source in client.sources {
-    if source.path == "" || !paths.add_and_check(source.path) {
+    if source.path == "" || !paths.insert_and_check(source.path) {
       raise Invalid(
         { path: source.path, line: 1, column: 1, },
         "operation sources require unique nonempty paths within each client",
@@ -209,7 +209,7 @@ fn Walk::validate_selection_directives(
     if name != "skip" && name != "include" {
       raise Unsupported(at, "unsupported selection directive @\{name}")
     }
-    if !seen.add_and_check(name) {
+    if !seen.insert_and_check(name) {
       raise Invalid(at, "duplicate @\{name} directive")
     }
     match directive.arguments {
@@ -224,7 +224,7 @@ fn Walk::validate_selection_directives(
             "condition variable \{variable} must satisfy Boolean!",
           )
         }
-        self.used_variables.add(variable)
+        self.used_variables.insert(variable)
       }
       _ =>
         raise Invalid(at, "@\{name} requires exactly one boolean if argument")
@@ -398,8 +398,8 @@ fn Walk::visit(
         if self.active.contains(name) {
           raise Invalid(at, "cyclic fragment: \{name}")
         }
-        self.seen_fragments.add(name)
-        self.active.add(name)
+        self.seen_fragments.insert(name)
+        self.active.insert(name)
         let effective = self.visit_condition(owner, condition, path, at, scope)
         self.visit(
           condition,
@@ -658,7 +658,9 @@ fn analyze(
   let sample_results = Map([])
   for sample in samples {
     if sample.id.trim().is_empty() ||
-      !sample_keys.add_and_check((sample.client, sample.operation, sample.id)) {
+      !sample_keys.insert_and_check(
+        (sample.client, sample.operation, sample.id),
+      ) {
       raise Invalid(
         start, "sample IDs must be nonempty and unique within each client operation",
       )
@@ -766,7 +768,7 @@ fn analyze(
         "empty or duplicate client name",
       )
     }
-    names.add(client.name)
+    names.insert(client.name)
     let catalog = catalog(client)
     let seen_fragments = Set([])
     let analyzed_operations = []

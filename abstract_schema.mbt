@@ -17,7 +17,7 @@ fn add_type_names(
   at : Location,
 ) -> Unit raise AnalysisError {
   for name in names {
-    if !values.add_and_check(name) {
+    if !values.insert_and_check(name) {
       raise Invalid(at, "duplicate member or interface \{name}")
     }
   }
@@ -157,7 +157,7 @@ fn build_possible_types(
           "\{name} implements undefined interface \{interface}",
         )
       }
-      possible[interface].add(name)
+      possible[interface].insert(name)
     }
   }
   for name, union in unions {
@@ -182,7 +182,7 @@ fn overlap(left : Set[String], right : Set[String]) -> Set[String] {
   let both = Set([])
   for name in left {
     if right.contains(name) {
-      both.add(name)
+      both.insert(name)
     }
   }
   both
