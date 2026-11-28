@@ -1,0 +1,95 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+let relay_revision : String = "2aa07233ab23e96bf9ccc98de435db069a32b7eb"
+
+///|
+async fn relay_document(root : String, name : String) -> String {
+  let path = root + "/todo/src/__generated__/" + name + ".graphql.ts"
+  let found = []
+  for line in @fs.read_file(path).text().split("\n") {
+    let value = line.trim()
+    if value.has_prefix("\"text\":") {
+      let payload = value[7:].trim()
+      let json = if payload.has_suffix(",") { payload[:payload.length()-1] } else { payload }
+      guard @json.parse(json) is String(text) else { fail("missing Relay document text in " + path) }
+      found.push(text)
+    }
+  }
+  guard found is [document] else { fail("expected exactly one Relay document in " + path) }
+  document
+}
+
+///|
+async fn relay_gate(archive : String, root : String) -> Unit {
+  let pin = @shell.Cmd("git", ["-C", root, "rev-parse", "HEAD"]).output()
+  pin.check()
+  assert_eq(pin.stdout().trim().to_owned(), relay_revision)
+  let temp = @shell.Cmd("mktemp", ["-d"]).output()
+  temp.check()
+  let workspace = temp.stdout().trim().to_owned()
+  defer @fs.rmdir(workspace, recursive=true)
+  let checker = workspace + "/checker"
+  let catalog = workspace + "/catalog"
+  @fs.mkdir(checker)
+  @fs.mkdir(catalog)
+  @shell.Cmd("python3", ["-m", "zipfile", "-e", archive, checker]).output().check()
+  let manifest = @fs.read_file(checker + "/moon.mod").text()
+  assert_true(manifest.contains("version = \"0.2.0\""))
+  @shell.Cmd("moon", ["-C", checker, "build", "cmd/check", "--target", "native", "--release", "--deny-warn"]).output().check()
+  let binary = checker + "/_build/native/release/build/cmd/check/check.exe"
+  let schema = @fs.read_file(root + "/todo/schema.graphql").text()
+  @fs.write_file(catalog + "/published.graphql", schema)
+  @fs.write_file(catalog + "/read.graphql", relay_document(root, "TodoAppQuery"))
+  @fs.write_file(catalog + "/write.graphql", relay_document(root, "ChangeTodoStatusMutation"))
+  @fs.write_file(catalog + "/check.json", @fs.read_file("examples/relay-gate/check.json").text())
+  let old_field = "  changeTodoStatus(input: ChangeTodoStatusInput!): ChangeTodoStatusPayload"
+  let new_field = "  setTodoStatus(input: ChangeTodoStatusInput!): ChangeTodoStatusPayload"
+  let compatible = schema.replace(old=old_field, new=old_field + "\n" + new_field)
+  assert_true(compatible != schema)
+  let breaking = compatible.replace(old=old_field + "\n", new="")
+  assert_true(breaking != compatible)
+  let restored = compatible.replace(old=old_field, new=old_field + " @deprecated(reason: \"Use setTodoStatus\")")
+  let args = ["--config", catalog + "/check.json"]
+  for (state, candidate, expected) in [
+    ("compatible", compatible, 0),
+    ("breaking", breaking, 1),
+    ("restored", restored, 0),
+  ] {
+    @fs.write_file(catalog + "/candidate.graphql", candidate)
+    let check = @shell.Cmd(binary, args).output()
+    assert_eq(check.exit_code(), expected)
+    guard @json.parse(check.stdout()) is {
+      "coverage": [{"operations":[{"name":"TodoAppQuery", ..}, {"name":"ChangeTodoStatusMutation", ..}], ..}],
+      "proposed_rejections": Array(rejections),
+      "changes": Array(changes), ..
+    } else { fail("invalid Relay gate report: " + check.stdout()) }
+    if state == "breaking" {
+      assert_true(rejections is [{"operation":"ChangeTodoStatusMutation", ..}])
+      assert_true(changes is [{
+        "coordinate":"Mutation.changeTodoStatus",
+        "impacts":[{"operation":"ChangeTodoStatusMutation", ..}], ..
+      }])
+    } else {
+      assert_eq(rejections.length(), 0)
+    }
+    println("Relay Todo \{state}: exit \{expected}")
+  }
+}
+
+///|
+fn main {
+  let args = @env.args()
+  guard args.length() == 3 else {
+    abort("Usage: moon run scripts/relay_gate.mbtx -- ARCHIVE RELAY_CHECKOUT")
+  }
+  @async.run_async_main(async fn() { relay_gate(args[1], args[2]) })
+}

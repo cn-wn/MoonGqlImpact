@@ -77,6 +77,18 @@ jobs:
         if: runner.os == 'Linux'
         run: moon run --deny-warn scripts/release_check.mbtx
 
+      - name: Check out the pinned Relay Todo client
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v4
+        with:
+          repository: relayjs/relay-examples
+          ref: 2aa07233ab23e96bf9ccc98de435db069a32b7eb
+          path: relay-upstream
+          persist-credentials: false
+      - name: Rehearse a Relay CI gate with the packaged checker
+        if: runner.os == 'Linux'
+        run: moon run --deny-warn scripts/relay_gate.mbtx -- _build/publish/cn-wn-moongqlimpact-0.2.0.zip relay-upstream
+
       - name: Check out the pinned SWAPI fixture
         if: runner.os == 'Linux'
         uses: actions/checkout@v4

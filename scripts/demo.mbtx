@@ -200,10 +200,28 @@ async fn mutation_demo() -> Unit {
 }
 
 ///|
+async fn scalar_contract_demo() -> Unit {
+  let run = @shell.Cmd("moon", [
+    "run", "cmd/check", "--target", "native", "--", "--config", "examples/scalar-contracts/check.json",
+  ]).output()
+  assert_eq(run.exit_code(), 1)
+  guard @json.parse(run.stdout()) is {
+    "changes": [],
+    "proposed_rejections": [{"operation": "LegacyLiteral", ..}],
+    "sample_assessments": [
+      {"id":"short","status":"VariableRejected","path":"/amount", ..},
+      {"id":"two-places","status":"Unchanged", ..},
+    ], ..
+  } else { fail("unexpected independent scalar rules report") }
+  println("Different scalar contracts on identical SDL verified")
+}
+
+///|
 fn main {
   @async.run_async_main(async fn() {
     demo()
     argument_demo()
     mutation_demo()
+    scalar_contract_demo()
   })
 }

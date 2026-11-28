@@ -1,0 +1,6 @@
+{
+  "baseline":"published.graphql",
+  "proposed":"candidate.graphql",
+  "clients":[{"name":"relay-web","queries":["read.graphql","write.graphql"]}],
+  "policy":{"observed_only":true,"fail_on":["breaking"]}
+}

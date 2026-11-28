@@ -79,6 +79,8 @@ Custom scalar inputs require an explicit rule. Configuration accepts `string`, `
 
 For a migration with different rules on the two snapshots, supply `scalar_contracts` with `baseline` and `proposed` rule maps. Each key must be a scalar declared on that side. The `decimal-fixed-2` profile requires exactly two fractional digits. The library offers `analyze_upgrade_with_scalar_contracts` for this form. See the [scalar migration](examples/scalar-contracts/README.md).
 
+The [Relay Todo gate rehearsal](examples/relay-gate/README.md) uses the upstream SDL and actual client operations to exercise green, blocked, and restored pull-request changes.
+
 ## Where to use it
 
 - **Server release gate.** Export the current and proposed SDL in a pull request. Check them with queries from the web and mobile clients. Use the reported locations to restore the old field contract or coordinate a client release.
