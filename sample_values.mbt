@@ -77,6 +77,28 @@ fn Coercion::default_value(
 }
 
 ///|
+fn check_one_of_values(
+  object : InputObject,
+  values : Map[String, Json],
+  path : String,
+) -> Unit raise SampleInputError {
+  if !object.one_of {
+    return
+  }
+  if values.length() != 1 {
+    raise ValueRejected(path, "@oneOf requires exactly one input field")
+  }
+  for name, value in values {
+    if value is Null {
+      raise ValueRejected(
+        path + "/" + name,
+        "@oneOf requires a non-null input field",
+      )
+    }
+  }
+}
+
+///|
 fn Coercion::object(
   self : Coercion,
   object : InputObject,
@@ -92,6 +114,7 @@ fn Coercion::object(
       raise ValueRejected(path, "unknown input field")
     }
   }
+  check_one_of_values(object, provided, path)
   let result = Map([])
   for name, field in object.fields {
     let nested = path + "/" + name

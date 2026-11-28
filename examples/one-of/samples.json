@@ -1,0 +1,6 @@
+[
+  {"id":"empty","client":"web","operation":"Runtime","variables":{"by":{}}},
+  {"id":"multiple","client":"web","operation":"Runtime","variables":{"by":{"id":"u-1","username":"demo"}}},
+  {"id":"null","client":"web","operation":"Runtime","variables":{"by":{"id":null}}},
+  {"id":"single","client":"web","operation":"Runtime","variables":{"by":{"username":"demo"}}}
+]

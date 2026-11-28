@@ -1,0 +1,2 @@
+input Match { id: ID username: String }
+type Query { find(by: Match!): String }

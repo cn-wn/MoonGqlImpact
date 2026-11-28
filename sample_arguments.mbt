@@ -145,8 +145,19 @@ fn Coercion::argument_literal(
     (NamedType(name), ObjectValue(entries)) if self.schema.input_objects.get(
         name,
       )
-      is Some(object) =>
-      self.argument_map(object.fields, Map(entries), variables, path, depth + 1)
+      is Some(object) => {
+      let value = self.argument_map(
+        object.fields,
+        Map(entries),
+        variables,
+        path,
+        depth + 1,
+      )
+      if value is Object(fields) {
+        check_one_of_values(object, fields, path)
+      }
+      value
+    }
     _ => self.default_value(kind, literal, path, depth)
   }
 }

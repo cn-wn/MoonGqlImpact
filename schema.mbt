@@ -313,15 +313,11 @@ fn index(
           name.has_prefix("__") {
           raise Invalid(at, "duplicate or reserved input object \{name}")
         }
-        if !input.directives.is_empty() {
-          raise Unsupported(
-            at, "input object directives are outside the input profile",
-          )
-        }
+        let one_of = input_is_one_of(source, input.directives)
         if input.fields.is_empty() {
           raise Invalid(at, "input object must define at least one field")
         }
-        let object = { at, fields: Map([]), }
+        let object = { at, fields: Map([]), one_of, }
         index_input_fields(source, object, input.fields)
         input_objects[name] = object
       }
@@ -339,6 +335,9 @@ fn index(
   }
   for extension in input_extensions {
     let at = source.at(extension.position)
+    if extension.directives.any(directive => directive.name == "oneOf") {
+      raise Invalid(at, "@oneOf belongs on the input object definition")
+    }
     if !extension.directives.is_empty() {
       raise Unsupported(
         at, "input extension directives are outside the input profile",

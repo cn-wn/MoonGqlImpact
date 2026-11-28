@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Support GraphQL OneOf input contracts and trace migrations to invalid operations and variable samples.
 - Compare independent custom scalar input rules on the baseline and proposed schemas.
 - Check sample values at field arguments, including omitted variables, explicit nulls, and nested defaults.
 

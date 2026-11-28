@@ -1,0 +1,7 @@
+query Single { find(by: {id:"u-1"}) }
+query Empty { find(by: {}) }
+query Multiple { find(by: {id:"u-1", username:"demo"}) }
+query ExplicitNull { find(by: {id:null}) }
+query NullableMember($id: ID) { find(by: {id:$id}) }
+query NonNullMember($id: ID!) { find(by: {id:$id}) }
+query Runtime($by: Match!) { find(by: $by) }

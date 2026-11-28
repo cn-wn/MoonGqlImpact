@@ -34,6 +34,7 @@ pub(all) enum ReasonCode {
   InputEnumValueRemoved
   ArgumentDefaultChanged
   InputFieldRemoved
+  InputObjectBecameOneOf
   RequiredInputFieldAdded
   InputFieldBecameRequired
   InputFieldTypeChanged
@@ -79,6 +80,7 @@ fn ReasonCode::reason(self : ReasonCode) -> ChangeReason {
     | AbstractMemberRemoved
     | FragmentNoLongerPossible
     | InputFieldRemoved
+    | InputObjectBecameOneOf
     | RequiredInputFieldAdded
     | InputFieldBecameRequired
     | InputFieldTypeChanged

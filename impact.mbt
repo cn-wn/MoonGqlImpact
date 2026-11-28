@@ -170,6 +170,7 @@ fn catalog(client : Client) -> Catalog raise AnalysisError {
 priv struct ContractChanges {
   arguments : Map[String, Array[ArgumentDiff]]
   inputs : Map[String, Array[ArgumentDiff]]
+  one_of : Map[String, Change]
   abstracts : Map[String, Change]
   outputs : Map[String, Change]
 }
@@ -321,7 +322,7 @@ fn Walk::visit(
             branch,
           })
         }
-        if !self.changes.inputs.is_empty() &&
+        if (!self.changes.inputs.is_empty() || !self.changes.one_of.is_empty()) &&
           self.proposed.fields.get(owner) is Some(fields) &&
           fields.get(field.name) is Some(proposed) {
           let site = { key, path: next_path, at, }
@@ -744,12 +745,14 @@ fn analyze(
   let contract_changes = {
     arguments: argument_changes,
     inputs: input_changes,
+    one_of: one_of_changes(old, next, ordered),
     abstracts: abstract_changes,
     outputs: changes,
   }
   let no_changes : ContractChanges = {
     arguments: Map([]),
     inputs: Map([]),
+    one_of: Map([]),
     abstracts: Map([]),
     outputs: Map([]),
   }

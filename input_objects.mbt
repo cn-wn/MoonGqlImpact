@@ -2,6 +2,43 @@
 priv struct InputObject {
   at : Location
   fields : Map[String, Argument]
+  one_of : Bool
+}
+
+///|
+fn input_is_one_of(
+  source : Source,
+  directives : Array[@gql.Directive],
+) -> Bool raise AnalysisError {
+  let mut one_of = false
+  for directive in directives {
+    let at = source.at(directive.position)
+    if directive.name != "oneOf" {
+      raise Unsupported(
+        at,
+        "unsupported input object directive @\{directive.name}",
+      )
+    }
+    if one_of || !directive.arguments.is_empty() {
+      raise Invalid(at, "@oneOf takes no arguments and may appear only once")
+    }
+    one_of = true
+  }
+  one_of
+}
+
+///|
+fn one_of_literal_fits(
+  entries : Array[(String, @gql.Value)],
+  variables : Map[String, @gql.VariableDefinition],
+) -> Bool {
+  guard entries is [(_, value)] else { return false }
+  match value {
+    NullValue => false
+    Variable(name) =>
+      variables.get(name) is Some({ var_type: NonNullType(_), .. })
+    _ => true
+  }
 }
 
 ///|
@@ -38,6 +75,13 @@ fn Schema::validate_input_objects(self : Schema) -> Unit raise AnalysisError {
     let mut required_edges = 0
     for field_name, field in object.fields {
       self.check_input_type(field.kind, field.at)
+      if object.one_of &&
+        (field.kind is NonNullType(_) || field.default_value is Some(_)) {
+        raise Invalid(
+          field.at,
+          "@oneOf field \{name}.\{field_name} must be nullable and have no default",
+        )
+      }
       if field.default_value is Some(value) &&
         !self.value_fits(field.kind, value, no_variables) {
         raise Invalid(
@@ -100,6 +144,9 @@ fn Schema::object_literal_fits(
   entries : Array[(String, @gql.Value)],
   variables : Map[String, @gql.VariableDefinition],
 ) -> Bool {
+  if object.one_of && !one_of_literal_fits(entries, variables) {
+    return false
+  }
   let seen = Set([])
   for (name, value) in entries {
     guard object.fields.get(name) is Some(field) &&
@@ -220,6 +267,34 @@ fn input_object_diffs(
 }
 
 ///|
+fn one_of_changes(
+  old : Schema,
+  next : Schema,
+  ordered : Array[Change],
+) -> Map[String, Change] {
+  let result = Map([])
+  for name, object in old.input_objects {
+    guard !object.one_of &&
+      next.input_objects.get(name) is Some(candidate) &&
+      candidate.one_of else {
+      continue
+    }
+    let change : Change = {
+      coordinate: name,
+      previous_type: "input \{name}",
+      proposed_type: Some("input \{name} @oneOf"),
+      baseline: object.at,
+      proposed: Some(candidate.at),
+      impacts: [],
+      reasons: Some([InputObjectBecameOneOf.reason()]),
+    }
+    ordered.push(change)
+    result[name] = change
+  }
+  result
+}
+
+///|
 priv struct InputSite {
   key : String
   path : Array[String]
@@ -291,6 +366,12 @@ fn Walk::observe_input_variable(
       continue
     }
     self.input_step(site)
+    if self.changes.one_of.get(name) is Some(change) {
+      add_input_runtime_reason(change)
+      self.record_impact(change, site.key, site.path, site.at, [
+        InputVariableValueMayBreak,
+      ])
+    }
     if self.changes.inputs.get(name) is Some(diffs) {
       for diff in diffs {
         let codes = []
@@ -370,6 +451,12 @@ fn Walk::observe_input(
       guard self.schema.input_objects.get(name) is Some(object) &&
         self.proposed.input_objects.get(name) is Some(candidate) else {
         return
+      }
+      if self.changes.one_of.get(name) is Some(change) &&
+        !one_of_literal_fits(entries, self.variables) {
+        self.record_impact(change, site.key, site.path, site.at, [
+          InputObjectBecameOneOf,
+        ])
       }
       let supplied = Map(entries)
       if self.changes.inputs.get(name) is Some(diffs) {

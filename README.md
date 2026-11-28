@@ -43,7 +43,7 @@ Use `--fail-on=breaking` to block on query or contract incompatibilities while k
 
 | Level | Reason codes |
 | --- | --- |
-| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected`, `MutationRootRemoved`, `VariableSampleRejected` |
+| `breaking` | `FieldRemoved`, `OutputTypeChanged`, `OutputNullabilityWeakened`, `ArgumentRemoved`, `RequiredArgumentAdded`, `ArgumentBecameRequired`, `ArgumentTypeChanged`, `InputEnumValueRemoved`, `InputFieldRemoved`, `InputObjectBecameOneOf`, `RequiredInputFieldAdded`, `InputFieldBecameRequired`, `InputFieldTypeChanged`, `AbstractTypeRemoved`, `AbstractMemberRemoved`, `FragmentNoLongerPossible`, `ProposedOperationRejected`, `MutationRootRemoved`, `VariableSampleRejected` |
 | `risk` | `OutputEnumValueAdded`, `OutputEnumValueRemoved`, `ArgumentDefaultChanged`, `InputFieldDefaultChanged`, `InputVariableValueMayBreak`, `AbstractMemberAdded`, `VariableSampleCoercionChanged` |
 | `notice` | `ScalarSpecificationChanged` |
 
@@ -103,9 +103,11 @@ Field arguments and variables support built-in scalars, enums, input objects, an
 
 Input objects can use both input definitions and extensions. The checker validates object literals and variable defaults, resolves nested references, and reports removed fields, tighter types or requirements, input enum narrowing, and changes in defaults at coordinates such as `Rule.status`. Omitted fields and explicit nulls are checked separately. When a query stays valid but a variable could carry a value that the proposed schema rejects, the impact has the `InputVariableValueMayBreak` reason. With `--observed-only --fail-on=breaking`, this risk alone does not block CI. A variable default rejected by the proposed schema still produces a breaking impact. Required input cycles and cyclic default expansion are rejected.
 
+An input object can declare `@oneOf`. Its members must be nullable and have no defaults, and callers must supply exactly one non-null member. Adding the directive is reported as a schema regression with separate static-operation and runtime-sample evidence. See the [OneOf migration](examples/one-of/README.md).
+
 Changes to an interface or union list its old and proposed concrete object types. An added concrete type is a risk for registered operations selecting that abstract result. For removals, evidence points to the fragment spread that loses a possible type. `FragmentNoLongerPossible` indicates that the fragment no longer matches at its site, including after narrowing by enclosing fragments. The checker validates interface inheritance and field signatures, union members, and response shape when aliases overlap. Extensions can add object or interface fields, implemented interfaces, union members, and enum values.
 
-The checker rejects custom scalar inputs without an explicit rule, directives on input objects and input fields, argument directives, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
+The checker rejects custom scalar inputs without an explicit rule, input object directives other than @oneOf, input field directives, argument directives, subscriptions, schema introspection (`__schema` and `__type`), and extensions outside those described above. Each source is capped at 1,000,000 string code units. The parser limits syntax nesting to 50, and each operation has separate limits for expanded depth and selection count. The tool reports supported input and output contract changes for the supplied snapshots. It does not establish compatibility of an entire production schema or infer usage by clients outside the catalog.
 
 ## Sources and license
 

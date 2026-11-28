@@ -1,0 +1,2 @@
+input Match @oneOf { id: ID username: String }
+type Query { find(by: Match!): String }
