@@ -1,0 +1,4 @@
+[
+  {"id":"short","client":"billing","operation":"Estimate","variables":{"amount":"12.5"}},
+  {"id":"two-places","client":"billing","operation":"Estimate","variables":{"amount":"12.50"}}
+]

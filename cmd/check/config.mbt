@@ -7,6 +7,7 @@ priv struct CheckInput {
   gate : Gate?
   samples : Array[@impact.VariableSample]
   scalar_inputs : Map[String, (Json) -> Bool]
+  scalar_contracts : (Map[String, (Json) -> Bool], Map[String, (Json) -> Bool])?
 }
 
 ///|
@@ -198,6 +199,7 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
   }
   let fields = config_object(json, path, "config", [
     "baseline", "proposed", "clients", "policy", "variable_samples", "scalar_inputs",
+    "scalar_contracts",
   ])
   guard fields.get("baseline") is Some(String(baseline)) &&
     fields.get("proposed") is Some(String(proposed)) else {
@@ -232,6 +234,11 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
     }
   }
   let root = @path.Path(path).dirname().to_string()
+  if fields.contains("scalar_inputs") && fields.contains("scalar_contracts") {
+    raise config_error(
+      path, "scalar_inputs and scalar_contracts cannot be combined",
+    )
+  }
   {
     baseline: read_source(config_file(root, baseline, path)),
     proposed: read_source(config_file(root, proposed, path)),
@@ -240,5 +247,9 @@ fn read_config(file : @impact.Source) -> CheckInput raise {
     gate,
     samples: read_variable_samples(fields.get("variable_samples"), path, root),
     scalar_inputs: config_scalar_rules(fields.get("scalar_inputs"), path),
+    scalar_contracts: config_scalar_contracts(
+      fields.get("scalar_contracts"),
+      path,
+    ),
   }
 }

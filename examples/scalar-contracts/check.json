@@ -1,0 +1,8 @@
+{
+  "baseline":"schema.graphql",
+  "proposed":"schema.graphql",
+  "clients":[{"name":"billing","queries":["operations.graphql"]}],
+  "policy":{"observed_only":true,"fail_on":["VariableSampleRejected"]},
+  "variable_samples":"samples.json",
+  "scalar_contracts":{"baseline":{"Decimal":"decimal-string"},"proposed":{"Decimal":"decimal-fixed-2"}}
+}

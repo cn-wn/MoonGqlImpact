@@ -13,6 +13,8 @@ pub fn analyze_upgrade_with_coverage(Source, Source, Array[Client]) -> AnalyzedU
 
 pub fn analyze_upgrade_with_samples(Source, Source, Array[Client], Array[VariableSample], scalar_inputs? : Map[String, (@json.Json) -> Bool]) -> AnalyzedUpgrade raise AnalysisError
 
+pub fn analyze_upgrade_with_scalar_contracts(Source, Source, Array[Client], Array[VariableSample], baseline_scalar_inputs~ : Map[String, (@json.Json) -> Bool], proposed_scalar_inputs~ : Map[String, (@json.Json) -> Bool]) -> AnalyzedUpgrade raise AnalysisError
+
 // Errors
 pub(all) suberror AnalysisError {
   Invalid(Location, String)

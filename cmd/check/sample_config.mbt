@@ -1,9 +1,13 @@
 ///|
-fn decimal_string(value : Json) -> Bool {
+fn decimal_string(value : Json, fixed_two~ : Bool = false) -> Bool {
   guard value is String(text) else { return false }
   let unsigned = if text.has_prefix("-") { text[1:] } else { text[:] }
   let parts = unsigned.split(".").collect()
-  (parts.length() == 1 || parts.length() == 2) &&
+  (if fixed_two {
+    parts is [_, fraction] && fraction.length() == 2
+  } else {
+    parts.length() == 1 || parts.length() == 2
+  }) &&
   parts.all(part => {
     !part.is_empty() && part.iter().all(ch => ch >= '0' && ch <= '9')
   })
@@ -24,11 +28,36 @@ fn config_scalar_rules(
       String("string") => value => value is String(_)
       String("boolean") => value => value is (True | False)
       String("number") => value => value is Number(n, ..) && n.is_finite()
-      String("decimal-string") => decimal_string
+      String("decimal-string") => value => decimal_string(value)
+      String("decimal-fixed-2") =>
+        value => decimal_string(value, fixed_two=true)
       _ => raise config_error(path, "unknown scalar input profile for \{name}")
     }
   }
   rules
+}
+
+///|
+fn config_scalar_contracts(
+  value : Json?,
+  path : String,
+) -> (Map[String, (Json) -> Bool], Map[String, (Json) -> Bool])? raise @impact.AnalysisError {
+  guard value is Some(value) else { return None }
+  let fields = config_object(value, path, "scalar_contracts", [
+    "baseline", "proposed",
+  ])
+  guard fields.get("baseline") is Some(baseline) &&
+    fields.get("proposed") is Some(proposed) else {
+    raise config_error(
+      path, "scalar_contracts requires baseline and proposed rule maps",
+    )
+  }
+  Some(
+    (
+      config_scalar_rules(Some(baseline), path),
+      config_scalar_rules(Some(proposed), path),
+    ),
+  )
 }
 
 ///|

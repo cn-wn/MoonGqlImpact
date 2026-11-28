@@ -1,0 +1,2 @@
+query Estimate($amount: Decimal!) { estimate(amount: $amount) }
+query LegacyLiteral { estimate(amount: "12.5") }

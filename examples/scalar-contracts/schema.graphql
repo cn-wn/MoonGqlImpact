@@ -1,0 +1,2 @@
+scalar Decimal
+type Query { estimate(amount: Decimal!): String }

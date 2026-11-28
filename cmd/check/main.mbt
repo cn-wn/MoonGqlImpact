@@ -113,6 +113,7 @@ fn run(args : Array[String]) -> Int32 raise {
       observed_only,
       samples: [],
       scalar_inputs: Map([]),
+      scalar_contracts: None,
       gate: if filtered {
         Some(gate)
       } else {
@@ -163,14 +164,27 @@ fn execute(
     gate,
     samples,
     scalar_inputs,
+    scalar_contracts,
   } = input
-  let analysis = @impact.analyze_upgrade_with_samples(
-    baseline,
-    proposed,
-    clients,
-    samples,
-    scalar_inputs~,
-  )
+  let analysis = match scalar_contracts {
+    Some((baseline_scalar_inputs, proposed_scalar_inputs)) =>
+      @impact.analyze_upgrade_with_scalar_contracts(
+        baseline,
+        proposed,
+        clients,
+        samples,
+        baseline_scalar_inputs~,
+        proposed_scalar_inputs~,
+      )
+    None =>
+      @impact.analyze_upgrade_with_samples(
+        baseline,
+        proposed,
+        clients,
+        samples,
+        scalar_inputs~,
+      )
+  }
   if markdown {
     println(analysis.to_markdown())
   } else {

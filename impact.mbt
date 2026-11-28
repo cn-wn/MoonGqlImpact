@@ -567,8 +567,48 @@ pub fn analyze_upgrade_with_samples(
     clients,
     validate_proposed=true,
     samples~,
-    scalar_inputs~,
+    scalar_inputs=(scalar_inputs, scalar_inputs),
   )
+}
+
+///|
+/// Evaluate each schema with its own custom scalar input validators.
+/// Validators describe acceptance. Any normalization performed by a resolver
+/// remains outside this analysis.
+pub fn analyze_upgrade_with_scalar_contracts(
+  baseline : Source,
+  proposed : Source,
+  clients : Array[Client],
+  samples : Array[VariableSample],
+  baseline_scalar_inputs~ : Map[String, (Json) -> Bool],
+  proposed_scalar_inputs~ : Map[String, (Json) -> Bool],
+) -> AnalyzedUpgrade raise AnalysisError {
+  analyze(
+    baseline,
+    proposed,
+    clients,
+    validate_proposed=true,
+    samples~,
+    scalar_inputs=(baseline_scalar_inputs, proposed_scalar_inputs),
+    strict_scalar_sides=true,
+  )
+}
+
+///|
+fn validate_scalar_rules(
+  rules : Map[String, (Json) -> Bool],
+  primary : Schema,
+  fallback : Schema,
+  source : Source,
+) -> Unit raise AnalysisError {
+  for name, _ in rules {
+    if !primary.scalars.contains(name) && !fallback.scalars.contains(name) {
+      raise Invalid(
+        { path: source.path, line: 1, column: 1, },
+        "input rule requires a declared scalar: \{name}",
+      )
+    }
+  }
 }
 
 ///|
@@ -578,16 +618,36 @@ fn analyze(
   clients : Array[Client],
   validate_proposed~ : Bool,
   samples~ : Array[VariableSample] = [],
-  scalar_inputs~ : Map[String, (Json) -> Bool] = Map([]),
+  scalar_inputs~ : (Map[String, (Json) -> Bool], Map[String, (Json) -> Bool]) = (
+    Map([]),
+    Map([]),
+  ),
+  strict_scalar_sides~ : Bool = false,
 ) -> AnalyzedUpgrade raise AnalysisError {
-  let old = index(baseline, scalar_inputs)
-  let next = index(proposed, scalar_inputs)
+  let (baseline_rules, proposed_rules) = scalar_inputs
+  let old = index(baseline, baseline_rules)
+  let next = index(proposed, proposed_rules)
   let start : Location = { path: baseline.path, line: 1, column: 1, }
-  for name, _ in scalar_inputs {
-    if !old.scalars.contains(name) && !next.scalars.contains(name) {
-      raise Invalid(start, "input rule requires a declared scalar: \{name}")
-    }
-  }
+  validate_scalar_rules(
+    baseline_rules,
+    old,
+    if strict_scalar_sides {
+      old
+    } else {
+      next
+    },
+    baseline,
+  )
+  validate_scalar_rules(
+    proposed_rules,
+    next,
+    if strict_scalar_sides {
+      next
+    } else {
+      old
+    },
+    proposed,
+  )
   if samples.length() > 4096 {
     raise Unsupported(start, "variable catalog exceeds 4096 samples")
   }
