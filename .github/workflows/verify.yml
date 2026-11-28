@@ -44,12 +44,10 @@ jobs:
         shell: pwsh
         env:
           MOON_HOME: D:/gql-moon
-          MOONC_OVERRIDE: D:/gql-moon/bin/moonc.exe
         run: |
           irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
           Add-Content -LiteralPath $env:GITHUB_PATH -Value 'D:/gql-moon/bin'
           Add-Content -LiteralPath $env:GITHUB_ENV -Value 'MOON_HOME=D:/gql-moon'
-          Add-Content -LiteralPath $env:GITHUB_ENV -Value 'MOONC_OVERRIDE=D:/gql-moon/bin/moonc.exe'
       - run: moon version --all
       - run: moon update
       - name: Check and run native tests (Unix)
